@@ -15,29 +15,39 @@ The goal is an **interactive platform** where a learner:
 3. Runs hidden tests → gets pass/fail feedback.
 4. Progresses through **Days → Tasks**, with progress saved.
 
-We build this by **forking BrowserCode** (the framework, Workstream A) and
+We build this by **forking Burrow** (the framework, Workstream A) and
 **authoring 42 tasks** of content against a shared schema (Workstream B).
 
-### Framework Base — BrowserCode (`leaningtech/browsercode`)
+### Framework Base — Burrow (`dhravya/burrow`, MIT) — see ADR-0001
 
-- **Repo:** https://github.com/leaningtech/browsercode
-- **What it is:** a browser-based coding sandbox — a working example of
-  [BrowserPod](https://browserpod.io/), a multi-language WebAssembly sandbox.
+- **Repo:** https://github.com/dhravya/burrow
+- **What it is:** *"a whole dev machine in a browser tab."* An MIT-licensed,
+  Bun-native, open-source alternative to WebContainers/BrowserCode.
 - **Runtime it gives us for free:**
-  - Node.js v22 running fully in-browser (Wasm), no server / no cloud compute
-  - A browser-contained, POSIX-like filesystem
-  - CLI tools: `bash`, `git`, `npm`
-  - Instant URL previews via BrowserPod's portal function
-  - First-class support for React (with Wasm overrides), plus Svelte/Next/Nuxt/Express
-- **Stack:** Vite + Svelte + TypeScript.
-- **Why this matters for us:** because real Node runs in the tab, our **hidden
-  test harness (T3)** can literally execute `npm test` against the learner's
-  code — no faked/simulated eval needed.
-- **Requires:** a BrowserPod API key exposed as `VITE_API_KEY` (get one at
-  browserpod.io). Chromium-based browser only (Safari unsupported).
-- **Note:** BrowserCode ships oriented around running AI coding CLIs (Claude Code,
-  Gemini CLI). For our tutorial platform we **strip/repurpose the CLI-launch
-  surface** and drive the sandbox from our own Course→Day→Task UI instead.
+  - Real **Bun transpiler** compiled to Wasm — genuine TS/TSX/JSX semantics
+  - A shared **virtual filesystem**, snapshotted to IndexedDB (survives reload)
+  - Interactive **shell** (bash), **git** (isomorphic-git), a from-scratch **npm** client
+  - **CodeMirror 6** editor + file tree + live git diff panel
+  - Live **server preview** via a service worker (`/preview/<port>/`)
+  - A local WebGPU AI coding agent (bonus, not needed by us)
+- **Stack:** Bun + TypeScript + Vite-style dev server (`bun run dev`).
+- **Why this base:** **MIT throughout, no API key, nothing leaves the tab.** No
+  proprietary engine, no vendor on the critical path. (BrowserCode was rejected
+  because its engine, BrowserPod, is proprietary and requires an API key — see
+  ADR-0001.)
+- **Requires:** Bun ≥ 1.3 to develop; a Chromium-based browser to run.
+- **Verified locally (2026-07-20):** `bun install` clean → `bun test` **404/404
+  pass** → `bun run dev` boots on `:4808`. The #3 "clone→install→run→boots" bar
+  is already met against Burrow.
+
+#### Known constraints (from Burrow COMPAT.md)
+
+- **Bun-native, not Node** — author tasks/tests against Bun semantics.
+- **No raw TCP** (no Postgres/Redis/etc. clients) and **no native addons**
+  (no `better-sqlite3`, and `bun:sqlite` is a hard build error). This shapes the
+  data layer — see §7 and ADR-0002.
+- `Bun.serve` is **`fetch`-handler-only** (no routes/websocket yet); no `git
+  push/pull`; run workers currently have **no direct VFS access**.
 
 > Philosophy (unchanged): *"You can't appreciate the solution until you've felt the problem."*
 
@@ -126,7 +136,33 @@ Foundational split (already published):
 
 ---
 
-## 6. Definition of Done (platform-level)
+## 7. Data Layer — Preconfigured SQLite + REST API (see ADR-0002)
+
+Days 3, 4, and 6 need a **real preconfigured database + API** for learners to
+work against. Because Burrow has no raw TCP and no native addons, we run the DB
+**inside the sandbox**:
+
+- **Engine:** **`sql.js`** — SQLite compiled to pure Wasm. Real SQL, no native
+  binary, no TCP, no key. Loaded via `initSqlJs({ wasmBinary })` (bytes fed
+  directly — verified to work; the `locateFile` path is environment-fragile).
+- **API:** a **preconfigured in-sandbox REST API** (`Bun.serve({ fetch })` /
+  Hono) exposing `GET/POST/PUT/DELETE /api/todos`, backed by the sql.js DB.
+  Same-origin via `/preview/<port>/` → **no CORS**. Ships in starter code;
+  students never configure it.
+- **"Feel the chaos":** the mock API has a **latency / error injection** toggle to
+  power the Day 3 narrative.
+- **Persistence:** **in-memory by default** (resets per run — clean slate per
+  lesson). Durable persistence is a later upgrade via the worker→host IndexedDB
+  bridge (run workers can't touch the VFS directly).
+- **Contract:** networking tasks target the stable `/api/todos` REST contract so
+  the framework (Workstream A) and content (Workstream B) stay decoupled.
+
+> Verified locally (2026-07-20): sql.js created a table, inserted rows, ran
+> `SELECT`, and exported persistable bytes (`SQLITE_WASM_OK`).
+
+---
+
+## 8. Definition of Done (platform-level)
 
 - [ ] Framework boots, loads any valid course (schema-driven).
 - [ ] All 42 tasks authored and passing their own hidden tests.
