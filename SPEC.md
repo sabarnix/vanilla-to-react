@@ -18,6 +18,27 @@ The goal is an **interactive platform** where a learner:
 We build this by **forking BrowserCode** (the framework, Workstream A) and
 **authoring 42 tasks** of content against a shared schema (Workstream B).
 
+### Framework Base — BrowserCode (`leaningtech/browsercode`)
+
+- **Repo:** https://github.com/leaningtech/browsercode
+- **What it is:** a browser-based coding sandbox — a working example of
+  [BrowserPod](https://browserpod.io/), a multi-language WebAssembly sandbox.
+- **Runtime it gives us for free:**
+  - Node.js v22 running fully in-browser (Wasm), no server / no cloud compute
+  - A browser-contained, POSIX-like filesystem
+  - CLI tools: `bash`, `git`, `npm`
+  - Instant URL previews via BrowserPod's portal function
+  - First-class support for React (with Wasm overrides), plus Svelte/Next/Nuxt/Express
+- **Stack:** Vite + Svelte + TypeScript.
+- **Why this matters for us:** because real Node runs in the tab, our **hidden
+  test harness (T3)** can literally execute `npm test` against the learner's
+  code — no faked/simulated eval needed.
+- **Requires:** a BrowserPod API key exposed as `VITE_API_KEY` (get one at
+  browserpod.io). Chromium-based browser only (Safari unsupported).
+- **Note:** BrowserCode ships oriented around running AI coding CLIs (Claude Code,
+  Gemini CLI). For our tutorial platform we **strip/repurpose the CLI-launch
+  surface** and drive the sandbox from our own Course→Day→Task UI instead.
+
 > Philosophy (unchanged): *"You can't appreciate the solution until you've felt the problem."*
 
 ---
