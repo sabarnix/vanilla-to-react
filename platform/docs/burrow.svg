@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="160" viewBox="0 0 520 160">
+  <!-- burrow — hand-drawn on purpose. palette matches src/ui/styles.css -->
+  <rect width="520" height="160" rx="12" fill="#17150f" stroke="#2e2920" stroke-width="1.5"/>
+  <!-- the mound -->
+  <path d="M34 122 Q 72 54 126 62 Q 168 68 180 122 Z" fill="#322b20" stroke="#f2a34c" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- the hole -->
+  <ellipse cx="110" cy="122" rx="32" ry="9" fill="#0c0b0a" stroke="#f2a34c" stroke-width="2"/>
+  <!-- the resident: ears -->
+  <ellipse cx="102" cy="76" rx="5" ry="14" fill="#0c0b0a" stroke="#ffc27a" stroke-width="2" transform="rotate(-14 102 76)"/>
+  <ellipse cx="120" cy="76" rx="5" ry="14" fill="#0c0b0a" stroke="#ffc27a" stroke-width="2" transform="rotate(14 120 76)"/>
+  <ellipse cx="102" cy="78" rx="1.8" ry="8" fill="#f2a34c" opacity="0.55" transform="rotate(-14 102 78)"/>
+  <ellipse cx="120" cy="78" rx="1.8" ry="8" fill="#f2a34c" opacity="0.55" transform="rotate(14 120 78)"/>
+  <!-- head, peeking -->
+  <circle cx="111" cy="100" r="12" fill="#0c0b0a" stroke="#ffc27a" stroke-width="2"/>
+  <!-- happy closed eyes + nose + whiskers -->
+  <path d="M104 99 q 2.5 -3 5 0 M113 99 q 2.5 -3 5 0" fill="none" stroke="#ffc27a" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="111" cy="104" r="1.4" fill="#f2a34c"/>
+  <path d="M97 103 l -7 -1.5 M97 106 l -7 1.5 M125 103 l 7 -1.5 M125 106 l 7 1.5" stroke="#7c7261" stroke-width="1.2" stroke-linecap="round"/>
+  <!-- the ai sparkle it just thought of -->
+  <path d="M146 64 l 3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#ffc27a"/>
+  <circle cx="160" cy="52" r="1.8" fill="#f2a34c"/>
+  <!-- ground -->
+  <path d="M24 122 H 196" stroke="#3d3629" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
+  <path d="M446 122 H 496" stroke="#3d3629" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
+  <!-- wordmark -->
+  <text x="208" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" fill="#ece3d2">burrow</text>
+  <text x="210" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">a dev machine in a browser tab</text>
+  <text x="210" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">phones home to nobody</text>
+</svg>
