@@ -33,6 +33,7 @@ import { initConsole } from "./console.ts";
 import { initStatusBar } from "./statusbar.ts";
 import { initTransport } from "./transport.ts";
 import { initPreview } from "./preview.ts";
+import { initApiTester } from "./apitester.ts";
 import { initResizers } from "./layout.ts";
 import { initMobileNav } from "./mobile.ts";
 
@@ -102,6 +103,8 @@ async function boot(): Promise<void> {
     reload: must("preview-reload"),
     tabs: bottomTabs,
   });
+
+  step("api-tester", () => initApiTester(must("api-panel")));
 
   initStatusBar({
     cwd: must("sb-cwd"),

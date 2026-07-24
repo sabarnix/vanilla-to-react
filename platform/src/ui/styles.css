@@ -930,6 +930,11 @@ a {
   color: var(--fg0);
   border-color: var(--acc-line);
 }
+/* Monaco editor: fill the host container and allow internal scrolling */
+.monaco-editor {
+  /* Monaco sets height via automaticLayout — just ensure it fills the host */
+}
+/* Keep CodeMirror (used in the diff panel) working too */
 .cm-editor {
   height: 100%;
 }
@@ -1408,6 +1413,158 @@ a {
   height: 1px;
   margin: 4px 6px;
   background: var(--line2);
+}
+
+/* ── api tester panel (src/ui/apitester.ts) ──────────────────────────────── */
+#api-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.apitester-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg2);
+  flex: none;
+}
+.apitester-method {
+  height: 26px;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--acc-hi);
+  background: var(--bg3);
+  border: 1px solid var(--acc-line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex: none;
+  transition: background 0.12s ease;
+}
+.apitester-method:hover {
+  background: var(--bg4);
+}
+.apitester-path {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg0);
+  background: var(--bg0);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.apitester-path:focus {
+  border-color: var(--acc-line);
+}
+.apitester-send {
+  flex: none;
+}
+.apitester-body-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg1);
+  flex: none;
+}
+.apitester-body-row[hidden] {
+  display: none;
+}
+.apitester-body-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+.apitester-body {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--fg0);
+  background: var(--bg0);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  min-height: 64px;
+  outline: none;
+  transition: border-color 0.12s ease;
+  scrollbar-width: thin;
+}
+.apitester-body:focus {
+  border-color: var(--acc-line);
+}
+.apitester-response {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 0;
+}
+.apitester-response[hidden] {
+  display: none;
+}
+.apitester-response-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg2);
+  flex: none;
+}
+.apitester-status {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg1);
+}
+.apitester-status-ok {
+  color: var(--ok);
+}
+.apitester-status-warn {
+  color: var(--warn);
+}
+.apitester-status-err {
+  color: var(--err);
+}
+.apitester-headers {
+  margin: 0;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--fg2);
+  background: var(--bg1);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 80px;
+  overflow: auto;
+}
+.apitester-body-out {
+  margin: 0;
+  padding: 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg0);
+  background: var(--bg0);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.55;
 }
 
 /* ── boot banner ──────────────────────────────────────────────────────────── */

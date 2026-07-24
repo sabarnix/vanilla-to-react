@@ -1,25 +1,59 @@
 /**
- * Burrow — center editor: CodeMirror 6, file tabs, autosave (src/ui internal).
+ * Burrow — center editor: Monaco, file tabs, autosave (src/ui internal).
  * Edits write to the VFS on a ~400ms per-tab trailing debounce; cmd/ctrl+S
  * flushes immediately. There are no dirty markers and no prompts — content is
  * always saved (a transient saving…/saved indicator lives in the status bar).
  * Every save goes through vfs.writeFile, so WatchedFs emits "file:changed"
  * and the rest of the app (tree, git panel, hot reload) sees it instantly.
  *
+ * MONACO WORKER STRATEGY: We run Monaco in "editor-only" mode — no background
+ * language-worker processes (no TypeScript IntelliSense worker, no JSON schema
+ * worker). This avoids worker URL / bundling complexity with Bun.build's
+ * browser target. To do this, we set self.MonacoEnvironment.getWorker to
+ * return a trivial no-op Worker (using a blob: URL). We still get syntax
+ * highlighting for all supported languages via Monaco's built-in tokenizers,
+ * which run on the main thread. The trade-off: no background type-checking,
+ * no hover-info popups, no advanced completions. For a teaching environment
+ * this is the right balance: simpler, more robust, no size penalty for worker
+ * bundles.
+ *
  * MARKDOWN PREVIEW: .md files open rendered (src/ui/markdown.ts) with an
  * edit ⇄ preview chip in the top-right of the pane; the choice sticks per
  * tab. Workspace-relative image paths resolve through the VFS into blob URLs
  * (revoked on every rerender); http(s)/data: URLs pass through untouched.
  */
-import { basicSetup } from "codemirror";
-import { EditorView, keymap } from "@codemirror/view";
-import { EditorState, type Extension } from "@codemirror/state";
-import { indentWithTab } from "@codemirror/commands";
-import { javascript } from "@codemirror/lang-javascript";
+
+// Configure Monaco's worker environment BEFORE importing monaco.
+// We stub out all workers with a no-op blob worker so no external worker
+// URLs are needed — syntax highlighting still works on the main thread.
+// This must happen before any Monaco module is loaded.
+(self as unknown as Record<string, unknown>)["MonacoEnvironment"] = {
+  getWorker: (_workerId: string, _label: string): Worker => {
+    // No-op worker: Monaco will fall back to main-thread tokenization.
+    const blob = new Blob(["self.onmessage=function(){}"], { type: "text/javascript" });
+    return new Worker(URL.createObjectURL(blob));
+  },
+};
+
+// Import only the editor API (no LSP or full language support bundle).
+// This avoids the monaco-lsp-client missing-module issue in editor.main.js.
+import * as monaco from "monaco-editor/editor/editor.api";
+
+// Register only the languages we need. Each register.js call registers
+// a lazy loader — the tokenizer grammar loads on first use.
+// Note: Monaco 0.56 ships JSON support only via `features/json` which depends
+// on `external/jsonc-parser` (NOT included in the npm bundle). We skip the
+// JSON import and fall back to plaintext for .json files. All others are in
+// `definitions/` and self-contained (no missing external deps).
+import "monaco-editor/languages/definitions/typescript/register";
+import "monaco-editor/languages/definitions/javascript/register";
+import "monaco-editor/languages/definitions/css/register";
+import "monaco-editor/languages/definitions/html/register";
+import "monaco-editor/languages/definitions/markdown/register";
+
 import { use } from "../contract/registry.ts";
 import { AutosaveScheduler } from "./autosave.ts";
 import { renderMarkdownDoc } from "./markdown.ts";
-import { burrowTheme } from "./theme.ts";
 import { basename, debounce, decodeText, extOf, h, looksBinary } from "./util.ts";
 
 export interface EditorUiState {
@@ -35,7 +69,10 @@ export type SaveState =
 
 interface OpenDoc {
   path: string;
-  state: EditorState;
+  /** Saved Monaco model for this path — preserves undo history across tab switches. */
+  model: monaco.editor.ITextModel;
+  /** Per-tab view state (cursor, scroll) saved when switching away from a tab. */
+  viewState: monaco.editor.ICodeEditorViewState | null;
   /** Last text known to be on disk (or in flight to it). */
   savedText: string;
   binary: boolean;
@@ -46,6 +83,42 @@ interface OpenDoc {
 
 const isMarkdown = (path: string): boolean => extOf(path) === "md";
 
+/** Map file extension → Monaco language id. */
+function langIdFor(path: string): string {
+  switch (extOf(path)) {
+    case "ts":
+    case "mts":
+    case "cts":
+      return "typescript";
+    case "tsx":
+      return "typescript"; // Monaco typescript supports JSX via tsx uri
+    case "jsx":
+      return "javascript"; // Monaco javascript supports JSX via jsx uri
+    case "js":
+    case "mjs":
+    case "cjs":
+      return "javascript";
+    case "json":
+      // Monaco 0.56 JSON support requires external/jsonc-parser (not bundled).
+      // Use plaintext to avoid import errors; structure is still readable.
+      return "plaintext";
+    case "css":
+      return "css";
+    case "html":
+      return "html";
+    case "md":
+      return "markdown";
+    default:
+      return "plaintext";
+  }
+}
+
+/** Create a Monaco model URI for a path (used to distinguish models). */
+function uriFor(path: string): monaco.Uri {
+  // Use tsx/jsx URI to enable JSX in Monaco's TypeScript/JavaScript tokenizer.
+  return monaco.Uri.parse(`file://${path}`);
+}
+
 const docs = new Map<string, OpenDoc>();
 const order: string[] = [];
 const listeners = new Set<(s: EditorUiState) => void>();
@@ -55,7 +128,8 @@ let inflightWrites = 0;
 let lastSaveError: string | null = null;
 let saveState: SaveState = { kind: "idle" };
 let active: string | null = null;
-let view: EditorView | null = null;
+/** The single Monaco editor instance, reused across all tabs. */
+let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 let tabsEl: HTMLElement | null = null;
 let hostEl: HTMLElement | null = null;
 let emptyEl: HTMLElement | null = null;
@@ -65,6 +139,8 @@ let mdToggleEl: HTMLButtonElement | null = null;
 let previewBlobUrls: string[] = [];
 /** Guards against a stale async image-hydration pass writing into a newer render. */
 let previewEpoch = 0;
+/** Unsubscribe function for the active model's content-change listener. */
+let activeModelListener: monaco.IDisposable | null = null;
 
 // ── public surface ───────────────────────────────────────────────────────────
 
@@ -96,7 +172,34 @@ export function initEditor(tabs: HTMLElement, host: HTMLElement, empty: HTMLElem
   emptyEl = empty;
   const events = use("events");
 
-  // Preview surface + mode chip live beside the CM host in #editor-body.
+  // Create the single Monaco editor instance. It is reused across tabs by
+  // swapping the model via editor.setModel().
+  editor = monaco.editor.create(host, {
+    theme: "vs-dark",
+    tabSize: 2,
+    insertSpaces: true,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    fontFamily: "Berkeley Mono, ui-monospace, SF Mono, JetBrains Mono, Fira Code, Menlo, Consolas, monospace",
+    fontSize: 13,
+    lineHeight: 20,
+    automaticLayout: true, // handles ResizeObserver automatically
+    wordWrap: "off",
+    renderWhitespace: "none",
+    glyphMargin: false,
+    folding: true,
+    lineNumbers: "on",
+    renderLineHighlight: "line",
+    occurrencesHighlight: "off",
+    // Disable features that need workers
+    // hover.enabled is "on"|"off" in Monaco 0.56 (string enum, not boolean)
+    parameterHints: { enabled: false },
+    suggestOnTriggerCharacters: false,
+    quickSuggestions: false,
+    wordBasedSuggestions: "off",
+  });
+
+  // Preview surface + mode chip live beside the Monaco host in #editor-body.
   previewEl = h("div", "md-preview");
   previewEl.style.display = "none";
   mdToggleEl = h("button", "md-toggle") as HTMLButtonElement;
@@ -107,7 +210,7 @@ export function initEditor(tabs: HTMLElement, host: HTMLElement, empty: HTMLElem
     if (!doc || !isMarkdown(doc.path)) return;
     doc.mdPreview = !doc.mdPreview;
     render();
-    if (!doc.mdPreview) view?.focus();
+    if (!doc.mdPreview) editor?.focus();
   });
   host.parentElement?.append(previewEl, mdToggleEl);
 
@@ -185,52 +288,10 @@ function emitSaveState(s: SaveState): void {
   }
 }
 
-function langFor(path: string): Extension[] {
-  switch (extOf(path)) {
-    case "ts":
-    case "mts":
-    case "cts":
-      return [javascript({ typescript: true })];
-    case "tsx":
-      return [javascript({ typescript: true, jsx: true })];
-    case "jsx":
-      return [javascript({ jsx: true })];
-    case "js":
-    case "mjs":
-    case "cjs":
-      return [javascript()];
-    default:
-      return [];
-  }
-}
-
-const updateListener = EditorView.updateListener.of((update) => {
-  if (!update.docChanged || !active) return;
-  const doc = docs.get(active);
-  if (!doc || doc.binary) return;
-  // Keep the stashed state fresh so a flush for a background tab is exact.
-  doc.state = update.state;
-  scheduleSave(doc.path);
-});
-
-function makeState(path: string, text: string): EditorState {
-  return EditorState.create({
-    doc: text,
-    extensions: [
-      basicSetup,
-      keymap.of([indentWithTab]),
-      EditorState.tabSize.of(2),
-      ...langFor(path),
-      burrowTheme,
-      updateListener,
-    ],
-  });
-}
-
 // ── autosave core ────────────────────────────────────────────────────────────
 
 function textOf(doc: OpenDoc): string {
-  return active === doc.path && view ? view.state.doc.toString() : doc.state.doc.toString();
+  return doc.model.getValue();
 }
 
 function scheduleSave(path: string): void {
@@ -283,9 +344,13 @@ async function open(path: string, line?: number, column?: number): Promise<void>
     }
     const binary = looksBinary(buf);
     const text = binary ? "" : decodeText(buf);
+    const model = binary
+      ? monaco.editor.createModel("", "plaintext", uriFor(path))
+      : monaco.editor.createModel(text, langIdFor(path), uriFor(path));
     docs.set(path, {
       path,
-      state: makeState(path, text),
+      model,
+      viewState: null,
       savedText: text,
       binary,
       byteSize: buf.byteLength,
@@ -300,36 +365,61 @@ async function open(path: string, line?: number, column?: number): Promise<void>
   if (line !== undefined) reveal(line, column);
 }
 
+/** Wire content-change listener for the currently active model. */
+function wireModelListener(path: string): void {
+  // Dispose any previous listener first.
+  activeModelListener?.dispose();
+  activeModelListener = null;
+
+  const doc = docs.get(path);
+  if (!doc || doc.binary) return;
+
+  activeModelListener = doc.model.onDidChangeContent(() => {
+    scheduleSave(path);
+  });
+}
+
 function activate(path: string): void {
   const next = docs.get(path);
   if (!next) return;
-  stashActiveState();
-  active = path;
-  if (!next.binary && hostEl) {
-    if (!view) view = new EditorView({ state: next.state, parent: hostEl });
-    else view.setState(next.state);
-  }
-  render();
-  if (!next.binary && !next.mdPreview) view?.focus();
-}
 
-/** Keep undo history + selection when switching tabs. */
-function stashActiveState(): void {
-  if (active && view) {
+  // Stash view state (cursor/scroll) for the current tab before switching.
+  if (active && editor) {
     const prev = docs.get(active);
-    if (prev && !prev.binary) prev.state = view.state;
+    if (prev && !prev.binary) {
+      prev.viewState = editor.saveViewState();
+    }
   }
+
+  active = path;
+
+  if (!next.binary && editor) {
+    editor.setModel(next.model);
+    // Restore the saved view state (cursor/scroll) for this tab.
+    if (next.viewState) {
+      editor.restoreViewState(next.viewState);
+    }
+    wireModelListener(path);
+  } else if (next.binary) {
+    // Detach the editor from the model for binary files.
+    editor?.setModel(null);
+    activeModelListener?.dispose();
+    activeModelListener = null;
+  }
+
+  render();
+  if (!next.binary && !next.mdPreview) editor?.focus();
 }
 
 function reveal(line: number, column?: number): void {
-  if (!view) return;
+  if (!editor) return;
   try {
-    const l = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
-    const pos = Math.min(l.from + Math.max(0, (column ?? 1) - 1), l.to);
-    view.dispatch({
-      selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: "center" }),
-    });
+    const pos: monaco.IPosition = {
+      lineNumber: Math.max(1, line),
+      column: Math.max(1, column ?? 1),
+    };
+    editor.setPosition(pos);
+    editor.revealPositionInCenter(pos);
   } catch (err) {
     console.error("[burrow/ui] reveal failed", err);
   }
@@ -350,11 +440,25 @@ function handleGone(path: string): void {
 }
 
 function removeDoc(path: string): void {
-  if (!docs.delete(path)) return;
+  const doc = docs.get(path);
+  if (!doc) return;
+
+  // If this is the active doc, clean up the listener before disposing.
+  if (active === path) {
+    activeModelListener?.dispose();
+    activeModelListener = null;
+  }
+
+  // Dispose the Monaco model to release memory.
+  doc.model.dispose();
+
+  docs.delete(path);
   const i = order.indexOf(path);
   if (i !== -1) order.splice(i, 1);
+
   if (active === path) {
     active = null;
+    editor?.setModel(null);
     const neighbor = order[Math.min(i, order.length - 1)];
     if (neighbor) {
       activate(neighbor);
@@ -394,11 +498,20 @@ async function reload(path: string): Promise<void> {
   doc.byteSize = buf.byteLength;
   if (!autosave.has(path)) {
     // No pending edits → follow the disk (git checkout, shell edits, …).
-    if (active === path && view) {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
-      doc.state = view.state;
+    // Update the model WITHOUT triggering our content-change listener
+    // (which would schedule a spurious save loop). We do this by temporarily
+    // disconnecting the listener, then pushing the value via model.setValue(),
+    // then reconnecting.
+    if (active === path) {
+      // Disconnect listener to avoid save loop.
+      activeModelListener?.dispose();
+      activeModelListener = null;
+      doc.model.setValue(text);
+      // Reconnect.
+      wireModelListener(path);
     } else {
-      doc.state = makeState(path, text);
+      // Background tab: just update the model value (no listener active).
+      doc.model.setValue(text);
     }
     // A previewed doc follows the disk immediately (agent edits, git checkout).
     if (active === path && doc.mdPreview) renderPreview(doc);

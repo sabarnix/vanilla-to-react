@@ -25,6 +25,7 @@
     "codemirror": "^6.0.2",
     "isomorphic-git": "^1.38.7",
     "just-bash": "^3.1.0",
+    "monaco-editor": "^0.56.0",
     "semver": "^7.8.5"
   }
 }
