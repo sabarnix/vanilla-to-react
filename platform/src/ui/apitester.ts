@@ -4,6 +4,12 @@
  * Lets a learner hit their running API (served at /preview/<path>) without
  * leaving the IDE. Dependency-free: plain DOM via the h() helper.
  *
+ * Layout: variant B "split pane" (validated in proto/apitester, DECISION.md).
+ * A full-width method/path strip on top, then two columns — request builder
+ * (JSON body) on the left, response on the right — so the request and its
+ * response stay visible together, Postman-style. Body-only for now ("B-lite");
+ * a Headers tab can be added later without disturbing this layout.
+ *
  * Usage: call initApiTester(el) from main.tsx with the panel's host element.
  */
 import { h } from "./util.ts";
@@ -14,7 +20,7 @@ const PREVIEW_PREFIX = "/preview";
 export function initApiTester(el: HTMLElement): void {
   el.innerHTML = "";
 
-  // ── toolbar row ──────────────────────────────────────────────────────────
+  // ── method/path strip (full width, top) ───────────────────────────────────
   const toolbar = h("div", "apitester-toolbar");
 
   const methodSelect = document.createElement("select");
@@ -38,37 +44,66 @@ export function initApiTester(el: HTMLElement): void {
 
   toolbar.append(methodSelect, pathInput, sendBtn);
 
-  // ── body textarea row ────────────────────────────────────────────────────
+  // ── split pane (request left | response right) ─────────────────────────────
+  const split = h("div", "apitester-split");
+
+  // request column (left) ─ JSON body
+  const requestPane = h("div", "apitester-pane apitester-request");
   const bodyRow = h("div", "apitester-body-row");
   const bodyLabel = h("label", "apitester-body-label", "request body (JSON)");
   const bodyArea = document.createElement("textarea");
   bodyArea.className = "apitester-body";
-  bodyArea.rows = 4;
   bodyArea.placeholder = '{\n  "key": "value"\n}';
   bodyArea.spellcheck = false;
   bodyRow.append(bodyLabel, bodyArea);
 
-  // ── response area ─────────────────────────────────────────────────────────
-  const responseEl = h("div", "apitester-response");
-  responseEl.hidden = true;
+  // Shown when the current method carries no body (GET), so the left pane
+  // never looks empty/broken.
+  const bodyEmpty = h(
+    "div",
+    "apitester-body-empty",
+    "This method has no request body.",
+  );
+  bodyEmpty.hidden = true;
+
+  requestPane.append(bodyRow, bodyEmpty);
+
+  // response column (right)
+  const responsePane = h("div", "apitester-pane apitester-response");
 
   const statusEl = h("span", "apitester-status");
+  const metaEl = h("span", "apitester-meta");
+  const responseHeader = h("div", "apitester-response-header");
+  responseHeader.append(statusEl, metaEl);
+
   const headersEl = h("pre", "apitester-headers");
   const bodyEl = h("pre", "apitester-body-out");
 
-  const responseHeader = h("div", "apitester-response-header");
-  responseHeader.append(statusEl);
+  // Placeholder until the first request is sent.
+  const responseEmpty = h(
+    "div",
+    "apitester-response-empty",
+    "Send a request to see the response here.",
+  );
 
-  responseEl.append(responseHeader, headersEl, bodyEl);
+  responsePane.append(responseHeader, headersEl, bodyEl, responseEmpty);
+
+  split.append(requestPane, responsePane);
+
+  // Start in the "empty" state: hide the live response bits.
+  responseHeader.hidden = true;
+  headersEl.hidden = true;
+  bodyEl.hidden = true;
 
   // ── assemble ─────────────────────────────────────────────────────────────
-  el.append(toolbar, bodyRow, responseEl);
+  el.append(toolbar, split);
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
   function updateBodyVisibility(): void {
     const hasBody = METHODS_WITH_BODY.has(methodSelect.value);
     bodyRow.hidden = !hasBody;
+    bodyEmpty.hidden = hasBody;
   }
 
   function setStatus(code: number, text: string): void {
@@ -91,6 +126,16 @@ export function initApiTester(el: HTMLElement): void {
     headersEl.textContent = lines.join("\n") || "(no headers)";
   }
 
+  function fmtBytes(n: number): string {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function setMeta(ms: number, bytes: number): void {
+    metaEl.textContent = `${Math.round(ms)} ms · ${fmtBytes(bytes)}`;
+  }
+
   async function send(): Promise<void> {
     const method = methodSelect.value;
     const rawPath = pathInput.value.trim() || "/";
@@ -105,12 +150,19 @@ export function initApiTester(el: HTMLElement): void {
 
     sendBtn.textContent = "…";
     (sendBtn as HTMLButtonElement).disabled = true;
-    responseEl.hidden = false;
+
+    // Enter live response state.
+    responseEmpty.hidden = true;
+    responseHeader.hidden = false;
+    headersEl.hidden = false;
+    bodyEl.hidden = false;
     statusEl.textContent = "sending…";
     statusEl.className = "apitester-status";
+    metaEl.textContent = "";
     headersEl.textContent = "";
     bodyEl.textContent = "";
 
+    const t0 = performance.now();
     try {
       const res = await fetch(url, {
         method,
@@ -123,6 +175,8 @@ export function initApiTester(el: HTMLElement): void {
 
       const ct = res.headers.get("content-type") ?? "";
       const raw = await res.text();
+      const elapsed = performance.now() - t0;
+      setMeta(elapsed, new Blob([raw]).size);
 
       if (ct.includes("json")) {
         try {
@@ -136,6 +190,7 @@ export function initApiTester(el: HTMLElement): void {
     } catch (err) {
       // Network error (e.g. fetch itself threw — unusual, but guard it).
       setStatus(0, "network error");
+      setMeta(performance.now() - t0, 0);
       headersEl.textContent = "";
       bodyEl.textContent = err instanceof Error ? err.message : String(err);
     } finally {
