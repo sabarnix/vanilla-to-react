@@ -130,8 +130,8 @@ describe("Day 5 + Day 6 — schema validity (in context of all six days)", () =>
 });
 
 describe("Day 5 — task count and titles", () => {
-  test("day5 has 3 tasks", () => {
-    expect(day5.tasks.length).toBe(3);
+  test("day5 has 6 tasks", () => {
+    expect(day5.tasks.length).toBe(6);
   });
 
   test("day5 task titles", () => {
@@ -139,13 +139,27 @@ describe("Day 5 — task count and titles", () => {
       "Extract a TodoItem component that takes a todo prop",
       "Toggle done with a callback prop (lift state up)",
       "Compose a TodoList component (App -> TodoList -> TodoItem)",
+      "Add an AddTodoForm with its own local input state",
+      "Add a TodoSummary that derives a count from props",
+      "Add a FilterBar with local state that filters TodoList",
+    ]);
+  });
+
+  test("day5 task ids in order", () => {
+    expect(day5.tasks.map((t) => t.id)).toEqual([
+      "d5-t1",
+      "d5-t2",
+      "d5-t3",
+      "d5-t4",
+      "d5-t5",
+      "d5-t6",
     ]);
   });
 });
 
 describe("Day 6 — task count and titles", () => {
-  test("day6 has 3 tasks", () => {
-    expect(day6.tasks.length).toBe(3);
+  test("day6 has 6 tasks", () => {
+    expect(day6.tasks.length).toBe(6);
   });
 
   test("day6 task titles", () => {
@@ -153,6 +167,20 @@ describe("Day 6 — task count and titles", () => {
       "Fetch todos on mount with loading/error state",
       "Cancel the in-flight fetch on unmount with a cleanup function",
       "Re-fetch on prop change with a correct dependency array",
+      "Refresh todos on demand with a refreshKey dependency",
+      "Poll /api/todos on an interval, cleaned up with clearInterval",
+      "Split mount-load and search into two independent effects",
+    ]);
+  });
+
+  test("day6 task ids in order", () => {
+    expect(day6.tasks.map((t) => t.id)).toEqual([
+      "d6-t1",
+      "d6-t2",
+      "d6-t3",
+      "d6-t4",
+      "d6-t5",
+      "d6-t6",
     ]);
   });
 });

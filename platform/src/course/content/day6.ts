@@ -39,6 +39,35 @@
  *           a slow response for an old `todoId` can never clobber a newer
  *           one (the same race d3-t3 fixed by hand, this time impossible by
  *           construction).
+ *   d6-t4 — **derived loading state from a manual refetch, not just
+ *           mount.** A "Refresh" button re-runs the same fetch d6-t1 ran on
+ *           mount, but this time the trigger is a state value (`refreshKey`)
+ *           bumped by a click handler, not the empty-deps mount-only case.
+ *           Puts a **non-empty dependency array to work** for the first
+ *           time in this course: `[refreshKey]` means "re-run whenever the
+ *           user asks for a refresh," while still resetting to a loading
+ *           state each time so the UI never shows stale data mixed with a
+ *           new request in flight.
+ *   d6-t5 — **polling with `setInterval` inside `useEffect`, cleaned up
+ *           with `clearInterval`.** Where d6-t2 cancelled a single in-
+ *           flight request, this task cancels a **repeating** side effect:
+ *           an interval that re-fetches `/api/todos` every N seconds needs
+ *           `clearInterval` in the effect's cleanup or the interval keeps
+ *           firing (and calling `setState`) forever after the component
+ *           unmounts — a textbook memory/update leak. Same cleanup
+ *           mechanism as d6-t2, applied to a timer instead of a fetch.
+ *   d6-t6 — **two independent effects with different dependency arrays on
+ *           the same component**, a shape that must not be conflated into
+ *           one `useEffect` even though both fetch from `/api/todos`: one
+ *           effect (deps `[]`) loads the full list once on mount; a second,
+ *           separate effect (deps `[query]`) re-runs a *search* fetch only
+ *           when the search text changes. This is the payoff lesson of the
+ *           whole dependency-array arc (d6-t1 empty deps -> d6-t3
+ *           `[todoId]` deps -> d6-t4 `[refreshKey]` deps): different
+ *           reactive values changing for different reasons belong in
+ *           **separate** effects, each with the dependency array that
+ *           matches *only* what it reads — not one mega-effect trying to
+ *           react to everything at once.
  *
  * Hidden tests follow Day 4/Day 5's proven approach exactly (see their doc
  * comments): every hidden test exercises a **pure, dependency-free helper
@@ -703,6 +732,841 @@ export const day6: Day = {
         "never lingers across a todoId change, and that the previous request is " +
         "aborted via cleanup before the next one starts — making d3-t3's race " +
         "impossible by construction rather than patched with a manual counter.",
+    },
+
+    // ------------------------------------------------------------------
+    // d6-t4 — manual refetch via a refreshKey dependency, not just mount
+    // ------------------------------------------------------------------
+    {
+      id: "d6-t4",
+      title: "Refresh todos on demand with a refreshKey dependency",
+      description:
+        "## Refresh todos on demand with a refreshKey dependency\n\n" +
+        "Every effect so far has used `[]` (run once, on mount) or " +
+        "`[todoId]` (re-run when a *prop* changes). Now put a non-empty " +
+        "dependency array to work for a value **you** control: a " +
+        '"Refresh" button that re-runs the exact same `/api/todos` fetch ' +
+        "as d6-t1, on demand.\n\n" +
+        "The trick: `useEffect` can't be called directly from a click " +
+        "handler — effects only run in response to a render where a " +
+        "dependency changed. So the click handler doesn't fetch anything " +
+        "itself; it just bumps a piece of state, `refreshKey`, and the " +
+        "effect's dependency array listens for that bump:\n\n" +
+        "```jsx\n" +
+        "function App() {\n" +
+        '  const [status, setStatus] = useState("loading");\n' +
+        "  const [todos, setTodos] = useState([]);\n" +
+        "  const [refreshKey, setRefreshKey] = useState(0);\n\n" +
+        "  useEffect(() => {\n" +
+        "    const controller = new AbortController();\n" +
+        '    setStatus("loading");\n\n' +
+        '    fetch("/api/todos", { signal: controller.signal })\n' +
+        "      .then((response) => {\n" +
+        '        if (!response.ok) throw new Error("bad response");\n' +
+        "        return response.json();\n" +
+        "      })\n" +
+        "      .then((data) => {\n" +
+        "        setTodos(data);\n" +
+        '        setStatus("ready");\n' +
+        "      })\n" +
+        "      .catch((err) => {\n" +
+        '        if (err.name === "AbortError") return;\n' +
+        '        setStatus("error");\n' +
+        "      });\n\n" +
+        "    return () => {\n" +
+        "      controller.abort();\n" +
+        "    };\n" +
+        "  }, [refreshKey]); // re-run whenever Refresh is clicked\n\n" +
+        "  function handleRefresh() {\n" +
+        "    setRefreshKey((key) => key + 1);\n" +
+        "  }\n\n" +
+        "  // ... render status/todos, plus a Refresh button calling handleRefresh ...\n" +
+        "}\n" +
+        "```\n\n" +
+        "`refreshKey`'s actual numeric value is never read anywhere except " +
+        "the dependency array — its only job is to *change* every time the " +
+        "user wants fresh data, which is exactly the signal `useEffect` " +
+        "needs to know it should run again. This is the same `[todoId]` " +
+        "mechanics as d6-t3, just driven by a click instead of a prop.\n\n" +
+        "**Your job:** finish `App.jsx` to match the shape above " +
+        "(`refreshKey` state, effect depends on `[refreshKey]`, resets " +
+        "`status` to `\"loading\"` at the top of each run, a Refresh " +
+        "`<button>` calling `handleRefresh`), AND implement the pure " +
+        "helper `nextRefreshKey(current)` in `view.js` — given the current " +
+        "`refreshKey` number, returns the next one (`current + 1`), the " +
+        "exact update `handleRefresh` applies via `setRefreshKey`.",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day6-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          "  // TODO: add refreshKey state (useState(0))\n\n" +
+          "  useEffect(() => {\n" +
+          "    const controller = new AbortController();\n" +
+          '    setStatus("loading");\n\n' +
+          '    fetch("/api/todos", { signal: controller.signal })\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch((err) => {\n" +
+          '        if (err.name === "AbortError") return;\n' +
+          '        setStatus("error");\n' +
+          "      });\n\n" +
+          "    return () => {\n" +
+          "      controller.abort();\n" +
+          "    };\n" +
+          "    // TODO: depend on [refreshKey] instead of []\n" +
+          "  }, []);\n\n" +
+          "  // TODO: add handleRefresh() that bumps refreshKey via setRefreshKey\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      {/* TODO: add a Refresh button calling handleRefresh */}\n" +
+          "      <ul>\n" +
+          "        {todos.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-item">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function deriveStatus(result) {\n" +
+          '  return result.ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function shouldShowError(errorName) {\n" +
+          '  return errorName !== "AbortError";\n' +
+          "}\n\n" +
+          "export function didTodoIdChange(prevId, nextId) {\n" +
+          "  return prevId !== nextId;\n" +
+          "}\n\n" +
+          "// TODO: implement nextRefreshKey(current) -> current + 1\n" +
+          "export function nextRefreshKey(current) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`refreshKey`'s value is never displayed and never inspected — it exists purely so the dependency array has something to notice changing. Any incrementing number works.",
+        "`setRefreshKey((key) => key + 1)` is the functional updater form (same pattern as `handleToggle`/`handleAdd` in Day 5) — safer than `setRefreshKey(refreshKey + 1)` if multiple clicks happen quickly.",
+        "The effect's dependency array must change from `[]` to `[refreshKey]` — forgetting this means the Refresh button's click updates state but the fetch never re-runs.",
+        "`nextRefreshKey` is a one-line increment: `return current + 1;`.",
+      ],
+      hiddenTests: [
+        {
+          filename: "next-refresh-key.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { nextRefreshKey } from "./view.js";\n\n' +
+            'test("nextRefreshKey increments from 0", () => {\n' +
+            "  expect(nextRefreshKey(0)).toBe(1);\n" +
+            "});\n\n" +
+            'test("nextRefreshKey increments from an arbitrary current value", () => {\n' +
+            "  expect(nextRefreshKey(7)).toBe(8);\n" +
+            "});\n",
+        },
+        {
+          filename: "refresh-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx has refreshKey state initialized to 0", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/useState\\(\\s*0\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "  expect(/refreshKey/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx\'s fetch effect depends on [refreshKey]", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/\\},\\s*\\[\\s*refreshKey\\s*\\]\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx defines handleRefresh that bumps refreshKey via setRefreshKey", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/function handleRefresh/.test(jsx)).toBe(true);\n" +
+            "  expect(/setRefreshKey\\(/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx renders a button wired to handleRefresh", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/onClick=\\{handleRefresh\\}/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx still resets status to loading at the top of the effect", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/useEffect\\(\\s*\\(\\s*\\)\\s*=>\\s*\\{[\\s\\S]{0,80}?setStatus\\(\\s*[\"']loading[\"']\\s*\\)/.test(jsx)).toBe(\n" +
+            "    true,\n" +
+            "  );\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day6-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          "  const [refreshKey, setRefreshKey] = useState(0);\n\n" +
+          "  useEffect(() => {\n" +
+          "    const controller = new AbortController();\n" +
+          '    setStatus("loading");\n\n' +
+          '    fetch("/api/todos", { signal: controller.signal })\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch((err) => {\n" +
+          '        if (err.name === "AbortError") return;\n' +
+          '        setStatus("error");\n' +
+          "      });\n\n" +
+          "    return () => {\n" +
+          "      controller.abort();\n" +
+          "    };\n" +
+          "  }, [refreshKey]);\n\n" +
+          "  function handleRefresh() {\n" +
+          "    setRefreshKey((key) => key + 1);\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <button onClick={handleRefresh}>Refresh</button>\n" +
+          "      <ul>\n" +
+          "        {todos.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-item">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function deriveStatus(result) {\n" +
+          '  return result.ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function shouldShowError(errorName) {\n" +
+          '  return errorName !== "AbortError";\n' +
+          "}\n\n" +
+          "export function didTodoIdChange(prevId, nextId) {\n" +
+          "  return prevId !== nextId;\n" +
+          "}\n\n" +
+          "export function nextRefreshKey(current) {\n" +
+          "  return current + 1;\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm refreshKey is used only as a dependency-array trigger (its value isn't " +
+        "otherwise displayed), that clicking Refresh calls setRefreshKey via the " +
+        "functional updater form, and that the effect's [refreshKey] dependency array " +
+        "is what actually causes the re-fetch — not a direct fetch call inside the click " +
+        "handler.",
+    },
+
+    // ------------------------------------------------------------------
+    // d6-t5 — polling with setInterval, cleaned up with clearInterval
+    // ------------------------------------------------------------------
+    {
+      id: "d6-t5",
+      title: "Poll /api/todos on an interval, cleaned up with clearInterval",
+      description:
+        "## Poll /api/todos on an interval, cleaned up with clearInterval\n\n" +
+        "d6-t2's cleanup cancelled a single in-flight fetch. This task " +
+        "cleans up a **repeating** side effect instead: a `setInterval` " +
+        "that re-fetches `/api/todos` every few seconds, so the list stays " +
+        "fresh without the user clicking Refresh.\n\n" +
+        "```jsx\n" +
+        "function App() {\n" +
+        '  const [status, setStatus] = useState("loading");\n' +
+        "  const [todos, setTodos] = useState([]);\n\n" +
+        "  useEffect(() => {\n" +
+        "    function loadTodos() {\n" +
+        '      fetch("/api/todos")\n' +
+        "        .then((response) => {\n" +
+        '          if (!response.ok) throw new Error("bad response");\n' +
+        "          return response.json();\n" +
+        "        })\n" +
+        "        .then((data) => {\n" +
+        "          setTodos(data);\n" +
+        '          setStatus("ready");\n' +
+        "        })\n" +
+        "        .catch(() => {\n" +
+        '          setStatus("error");\n' +
+        "        });\n" +
+        "    }\n\n" +
+        "    loadTodos(); // fetch immediately on mount too, don't wait for the first tick\n" +
+        "    const intervalId = setInterval(loadTodos, 5000);\n\n" +
+        "    return () => {\n" +
+        "      clearInterval(intervalId);\n" +
+        "    };\n" +
+        "  }, []);\n\n" +
+        "  // ... render status/todos as usual ...\n" +
+        "}\n" +
+        "```\n\n" +
+        "Without the cleanup function calling `clearInterval`, the timer " +
+        "keeps firing every 5 seconds **forever** — even after the " +
+        "component unmounts — silently calling `setState` on a component " +
+        "that no longer exists (React logs a warning for exactly this) and " +
+        "wasting a network request every tick. `clearInterval(intervalId)` " +
+        "in the cleanup function stops the timer the instant the effect " +
+        "would otherwise re-run or the component unmounts — the same " +
+        "cleanup mechanism as d6-t2's `controller.abort()`, just aimed at " +
+        "a different kind of ongoing work (a repeating timer instead of a " +
+        "single fetch).\n\n" +
+        "**Your job:** wire the `setInterval` + `clearInterval` shape " +
+        "above into `App.jsx` (fetch immediately on mount, *and* set up an " +
+        "interval that repeats the same fetch every 5000ms, cleaned up via " +
+        "`clearInterval`), AND implement the pure helper " +
+        "`pollIntervalMs(seconds)` in `view.js` — given a poll interval " +
+        "expressed in whole seconds, returns the equivalent number of " +
+        "milliseconds `setInterval` expects (`seconds * 1000`).",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day6-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          "    function loadTodos() {\n" +
+          '      fetch("/api/todos")\n' +
+          "        .then((response) => {\n" +
+          '          if (!response.ok) throw new Error("bad response");\n' +
+          "          return response.json();\n" +
+          "        })\n" +
+          "        .then((data) => {\n" +
+          "          setTodos(data);\n" +
+          '          setStatus("ready");\n' +
+          "        })\n" +
+          "        .catch(() => {\n" +
+          '          setStatus("error");\n' +
+          "        });\n" +
+          "    }\n\n" +
+          "    loadTodos();\n" +
+          "    // TODO: setInterval(loadTodos, 5000), keep the id, and return a\n" +
+          "    // cleanup function that calls clearInterval(intervalId).\n" +
+          "  }, []);\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          '        <li key={todo.id} className="todo-item">\n' +
+          "          {todo.title}\n" +
+          "        </li>\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function deriveStatus(result) {\n" +
+          '  return result.ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function shouldShowError(errorName) {\n" +
+          '  return errorName !== "AbortError";\n' +
+          "}\n\n" +
+          "export function didTodoIdChange(prevId, nextId) {\n" +
+          "  return prevId !== nextId;\n" +
+          "}\n\n" +
+          "export function nextRefreshKey(current) {\n" +
+          "  return current + 1;\n" +
+          "}\n\n" +
+          "// TODO: implement pollIntervalMs(seconds) -> seconds * 1000\n" +
+          "export function pollIntervalMs(seconds) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`setInterval` returns an id — capture it in a variable (e.g. `const intervalId = setInterval(loadTodos, 5000);`) so the cleanup function can reference it in its closure.",
+        "The cleanup function is `return () => { clearInterval(intervalId); };` — same shape as d6-t2's `controller.abort()`, just calling `clearInterval` instead.",
+        "Call `loadTodos()` once immediately, outside/before the `setInterval` call, so the first render doesn't sit in a loading state for the full 5 seconds waiting for the first tick.",
+        "`pollIntervalMs` is a one-line multiplication: `return seconds * 1000;`.",
+      ],
+      hiddenTests: [
+        {
+          filename: "poll-interval-ms.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { pollIntervalMs } from "./view.js";\n\n' +
+            'test("pollIntervalMs converts 5 seconds to 5000ms", () => {\n' +
+            "  expect(pollIntervalMs(5)).toBe(5000);\n" +
+            "});\n\n" +
+            'test("pollIntervalMs converts 1 second to 1000ms", () => {\n' +
+            "  expect(pollIntervalMs(1)).toBe(1000);\n" +
+            "});\n\n" +
+            'test("pollIntervalMs converts 30 seconds to 30000ms", () => {\n' +
+            "  expect(pollIntervalMs(30)).toBe(30000);\n" +
+            "});\n",
+        },
+        {
+          filename: "polling-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx calls loadTodos immediately, then sets up a 5000ms interval", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/loadTodos\\(\\s*\\)\\s*;/.test(jsx)).toBe(true);\n" +
+            "  expect(/setInterval\\(\\s*loadTodos\\s*,\\s*5000\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx\'s effect returns a cleanup function that calls clearInterval", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/return\\s*\\(\\s*\\)\\s*=>\\s*\\{[\\s\\S]*?clearInterval\\([\\s\\S]*?\\)[\\s\\S]*?\\}/.test(jsx)).toBe(\n" +
+            "    true,\n" +
+            "  );\n" +
+            "});\n\n" +
+            'test("App.jsx stores the setInterval id in a variable used by clearInterval", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/const\\s+(\\w+)\\s*=\\s*setInterval/.test(jsx)).toBe(true);\n" +
+            "  const match = jsx.match(/const\\s+(\\w+)\\s*=\\s*setInterval/);\n" +
+            "  const idName = match ? match[1] : null;\n" +
+            "  expect(idName).not.toBeNull();\n" +
+            "  expect(jsx.includes(`clearInterval(${idName})`)).toBe(true);\n" +
+            "});\n\n" +
+            'test("the polling effect still has an empty dependency array", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/\\},\\s*\\[\\s*\\]\\s*\\)\\s*;/.test(jsx)).toBe(true);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day6-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          "    function loadTodos() {\n" +
+          '      fetch("/api/todos")\n' +
+          "        .then((response) => {\n" +
+          '          if (!response.ok) throw new Error("bad response");\n' +
+          "          return response.json();\n" +
+          "        })\n" +
+          "        .then((data) => {\n" +
+          "          setTodos(data);\n" +
+          '          setStatus("ready");\n' +
+          "        })\n" +
+          "        .catch(() => {\n" +
+          '          setStatus("error");\n' +
+          "        });\n" +
+          "    }\n\n" +
+          "    loadTodos();\n" +
+          "    const intervalId = setInterval(loadTodos, 5000);\n\n" +
+          "    return () => {\n" +
+          "      clearInterval(intervalId);\n" +
+          "    };\n" +
+          "  }, []);\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          '        <li key={todo.id} className="todo-item">\n' +
+          "          {todo.title}\n" +
+          "        </li>\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function deriveStatus(result) {\n" +
+          '  return result.ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function shouldShowError(errorName) {\n" +
+          '  return errorName !== "AbortError";\n' +
+          "}\n\n" +
+          "export function didTodoIdChange(prevId, nextId) {\n" +
+          "  return prevId !== nextId;\n" +
+          "}\n\n" +
+          "export function nextRefreshKey(current) {\n" +
+          "  return current + 1;\n" +
+          "}\n\n" +
+          "export function pollIntervalMs(seconds) {\n" +
+          "  return seconds * 1000;\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm the effect fetches immediately on mount (not waiting for the first " +
+        "interval tick), sets up setInterval with the loadTodos function, stores the " +
+        "interval id, and returns a cleanup function that calls clearInterval on that " +
+        "same id — the repeating-timer counterpart to d6-t2's AbortController cleanup.",
+    },
+
+    // ------------------------------------------------------------------
+    // d6-t6 — two independent effects, two independent dependency arrays
+    // ------------------------------------------------------------------
+    {
+      id: "d6-t6",
+      title: "Split mount-load and search into two independent effects",
+      description:
+        "## Split mount-load and search into two independent effects\n\n" +
+        "Last Day 6 task: a component that both loads the full todo list " +
+        "once on mount **and** searches todos by title as the user types, " +
+        "hitting `GET /api/todos?q=<query>`. The temptation is to cram " +
+        "both behaviors into one `useEffect` — resist it. These are two " +
+        "**independent** reactive concerns (\"load once\" vs. \"re-search " +
+        "when `query` changes\") and belong in two **separate** effects, " +
+        "each with only the dependency array it actually needs:\n\n" +
+        "```jsx\n" +
+        "function App() {\n" +
+        '  const [status, setStatus] = useState("loading");\n' +
+        "  const [todos, setTodos] = useState([]);\n" +
+        '  const [query, setQuery] = useState("");\n' +
+        "  const [results, setResults] = useState([]);\n\n" +
+        "  // Effect 1: load the full list once, on mount.\n" +
+        "  useEffect(() => {\n" +
+        "    const controller = new AbortController();\n" +
+        '    fetch("/api/todos", { signal: controller.signal })\n' +
+        "      .then((response) => {\n" +
+        '        if (!response.ok) throw new Error("bad response");\n' +
+        "        return response.json();\n" +
+        "      })\n" +
+        "      .then((data) => {\n" +
+        "        setTodos(data);\n" +
+        '        setStatus("ready");\n' +
+        "      })\n" +
+        "      .catch((err) => {\n" +
+        '        if (err.name === "AbortError") return;\n' +
+        '        setStatus("error");\n' +
+        "      });\n" +
+        "    return () => controller.abort();\n" +
+        "  }, []); // <- runs once\n\n" +
+        "  // Effect 2: re-search whenever `query` changes.\n" +
+        "  useEffect(() => {\n" +
+        '    if (query === "") {\n' +
+        "      setResults([]);\n" +
+        "      return;\n" +
+        "    }\n" +
+        "    const controller = new AbortController();\n" +
+        "    fetch(`/api/todos?q=${encodeURIComponent(query)}`, {\n" +
+        "      signal: controller.signal,\n" +
+        "    })\n" +
+        "      .then((response) => response.json())\n" +
+        "      .then((data) => setResults(data))\n" +
+        "      .catch((err) => {\n" +
+        '        if (err.name === "AbortError") return;\n' +
+        "      });\n" +
+        "    return () => controller.abort();\n" +
+        "  }, [query]); // <- runs whenever query changes\n\n" +
+        "  // ... render todos/results/status ...\n" +
+        "}\n" +
+        "```\n\n" +
+        "Neither effect knows the other exists. Effect 1's `[]` deps say " +
+        "\"I only care about mount.\" Effect 2's `[query]` deps say \"I " +
+        "only care about `query` changing\" — and it correctly cleans up " +
+        "*its own* previous in-flight search (same `[todoId]` mechanics as " +
+        "d6-t3) every time `query` changes, completely independent of " +
+        "whatever effect 1 is doing. Trying to force this into one effect " +
+        "would mean either re-running the full-list fetch every keystroke " +
+        "(wasteful and wrong) or reaching for awkward manual guards to " +
+        "skip parts of a single effect body — the dependency array is " +
+        "already the tool for expressing \"these two things change for " +
+        "different reasons and should run independently.\"\n\n" +
+        "**Your job:** build `App.jsx` matching the two-effects shape " +
+        "above (effect 1 deps `[]` loads `todos`, effect 2 deps `[query]` " +
+        "loads `results` and resets to an empty array when `query` is " +
+        "empty), AND implement the pure helper `buildSearchUrl(query)` in " +
+        "`view.js` — given a search string, returns the endpoint effect 2 " +
+        "fetches: `/api/todos?q=` followed by the **URL-encoded** query " +
+        "(use `encodeURIComponent`).",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day6-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [query, setQuery] = useState("");\n' +
+          "  const [results, setResults] = useState([]);\n\n" +
+          "  // TODO: Effect 1 — load the full list once, on mount (deps []).\n" +
+          "  // Same fetch-on-mount + AbortController + cleanup shape as d6-t2.\n\n" +
+          "  // TODO: Effect 2 — re-search whenever `query` changes (deps [query]).\n" +
+          '  // If query is "", setResults([]) and skip fetching. Otherwise fetch\n' +
+          "  // `/api/todos?q=${encodeURIComponent(query)}`, setResults(data) on\n" +
+          "  // success, ignore AbortError, clean up the previous request via\n" +
+          "  // AbortController + cleanup (same shape as effect 1 / d6-t3).\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <input\n" +
+          "        value={query}\n" +
+          "        onChange={(event) => setQuery(event.target.value)}\n" +
+          "      />\n" +
+          "      <ul>\n" +
+          "        {todos.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-item">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "      <ul>\n" +
+          "        {results.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-result">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function deriveStatus(result) {\n" +
+          '  return result.ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function shouldShowError(errorName) {\n" +
+          '  return errorName !== "AbortError";\n' +
+          "}\n\n" +
+          "export function didTodoIdChange(prevId, nextId) {\n" +
+          "  return prevId !== nextId;\n" +
+          "}\n\n" +
+          "export function nextRefreshKey(current) {\n" +
+          "  return current + 1;\n" +
+          "}\n\n" +
+          "export function pollIntervalMs(seconds) {\n" +
+          "  return seconds * 1000;\n" +
+          "}\n\n" +
+          "// TODO: implement buildSearchUrl(query) -> \"/api/todos?q=\" + encodeURIComponent(query)\n" +
+          "export function buildSearchUrl(query) {\n" +
+          "}\n",
+      },
+      hints: [
+        "Write two completely separate `useEffect(() => { ... }, [...])` calls — do not try to merge the mount-load and the search into one effect body with an `if` guard.",
+        "Effect 1's dependency array is `[]` (same shape as d6-t1/d6-t2); effect 2's is `[query]` (same shape as d6-t3's `[todoId]`, just a different reactive value).",
+        'Guard the empty-query case at the *top* of effect 2, before creating an AbortController or calling fetch: `if (query === "") { setResults([]); return; }`.',
+        '`buildSearchUrl` is a one-line template string: `return "/api/todos?q=" + encodeURIComponent(query);` — use `encodeURIComponent` so special characters in the search text don\'t break the URL.',
+      ],
+      hiddenTests: [
+        {
+          filename: "build-search-url.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { buildSearchUrl } from "./view.js";\n\n' +
+            'test("buildSearchUrl builds the search endpoint for a plain query", () => {\n' +
+            '  expect(buildSearchUrl("milk")).toBe("/api/todos?q=milk");\n' +
+            "});\n\n" +
+            'test("buildSearchUrl URL-encodes special characters", () => {\n' +
+            '  expect(buildSearchUrl("buy milk & eggs")).toBe(\n' +
+            '    "/api/todos?q=buy%20milk%20%26%20eggs",\n' +
+            "  );\n" +
+            "});\n\n" +
+            'test("buildSearchUrl handles an empty query", () => {\n' +
+            '  expect(buildSearchUrl("")).toBe("/api/todos?q=");\n' +
+            "});\n",
+        },
+        {
+          filename: "two-effects-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx has exactly two useEffect calls", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const matches = jsx.match(/useEffect\\(/g) ?? [];\n" +
+            "  expect(matches.length).toBe(2);\n" +
+            "});\n\n" +
+            'test("one effect has an empty dependency array (mount-load)", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/\\},\\s*\\[\\s*\\]\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("the other effect depends on [query] (search)", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/\\},\\s*\\[\\s*query\\s*\\]\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx fetches the mount-load endpoint and the search endpoint separately", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/fetch\\(\\s*["\']\\/api\\/todos["\']/.test(jsx)).toBe(true);\n' +
+            "  expect(/\\/api\\/todos\\?q=\\$\\{encodeURIComponent\\(query\\)\\}/.test(jsx)).toBe(\n" +
+            "    true,\n" +
+            "  );\n" +
+            "});\n\n" +
+            'test("App.jsx resets results to empty when query is empty", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/query\\s*===\\s*["\']["\']/.test(jsx)).toBe(true);\n' +
+            "  expect(/setResults\\(\\s*\\[\\s*\\]\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("both effects use AbortController + cleanup", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const controllerCount = (jsx.match(/new AbortController\\(\\s*\\)/g) ?? []).length;\n" +
+            "  expect(controllerCount).toBe(2);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day6-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [query, setQuery] = useState("");\n' +
+          "  const [results, setResults] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          "    const controller = new AbortController();\n" +
+          '    fetch("/api/todos", { signal: controller.signal })\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch((err) => {\n" +
+          '        if (err.name === "AbortError") return;\n' +
+          '        setStatus("error");\n' +
+          "      });\n\n" +
+          "    return () => {\n" +
+          "      controller.abort();\n" +
+          "    };\n" +
+          "  }, []);\n\n" +
+          "  useEffect(() => {\n" +
+          '    if (query === "") {\n' +
+          "      setResults([]);\n" +
+          "      return;\n" +
+          "    }\n\n" +
+          "    const controller = new AbortController();\n" +
+          "    fetch(`/api/todos?q=${encodeURIComponent(query)}`, {\n" +
+          "      signal: controller.signal,\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((data) => {\n" +
+          "        setResults(data);\n" +
+          "      })\n" +
+          "      .catch((err) => {\n" +
+          '        if (err.name === "AbortError") return;\n' +
+          "      });\n\n" +
+          "    return () => {\n" +
+          "      controller.abort();\n" +
+          "    };\n" +
+          "  }, [query]);\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <input\n" +
+          "        value={query}\n" +
+          "        onChange={(event) => setQuery(event.target.value)}\n" +
+          "      />\n" +
+          "      <ul>\n" +
+          "        {todos.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-item">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "      <ul>\n" +
+          "        {results.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-result">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function deriveStatus(result) {\n" +
+          '  return result.ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function shouldShowError(errorName) {\n" +
+          '  return errorName !== "AbortError";\n' +
+          "}\n\n" +
+          "export function didTodoIdChange(prevId, nextId) {\n" +
+          "  return prevId !== nextId;\n" +
+          "}\n\n" +
+          "export function nextRefreshKey(current) {\n" +
+          "  return current + 1;\n" +
+          "}\n\n" +
+          "export function pollIntervalMs(seconds) {\n" +
+          "  return seconds * 1000;\n" +
+          "}\n\n" +
+          "export function buildSearchUrl(query) {\n" +
+          '  return "/api/todos?q=" + encodeURIComponent(query);\n' +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm the component has exactly two useEffect calls with different " +
+        "dependency arrays ([] for the mount-load, [query] for the search), that " +
+        "neither effect's logic leaks into the other, and that both independently use " +
+        "AbortController + cleanup — demonstrating that separate reactive concerns get " +
+        "separate effects rather than one effect trying to branch on everything.",
     },
   ],
 };

@@ -41,6 +41,35 @@
  *           component **composition**: three small, single-purpose pieces
  *           (`App` → `TodoList` → `TodoItem`) instead of one function doing
  *           everything, each provably correct on its own via a pure helper.
+ *   d5-t4 — an `AddTodoForm` component that owns its **own local state**:
+ *           the text currently typed into the input. This is the other
+ *           half of "state lives where it's needed" — d5-t2 lifted `done`
+ *           up because it's shared; the in-progress input text is *not*
+ *           shared (nothing outside the form cares what's half-typed), so
+ *           it stays local to `AddTodoForm` via its own `useState`. On
+ *           submit, the form calls an `onAdd` callback prop with the
+ *           finished title and clears its own input — the new todo itself
+ *           becomes `App`'s concern again, same "report intent up, own
+ *           truth in the parent" shape as d5-t2's `onToggle`.
+ *   d5-t5 — a `TodoSummary` component that receives the same `todos` array
+ *           `TodoList` receives, but renders a **derived** value ("2 of 3
+ *           done") instead of a list. This is the "don't lift what you can
+ *           derive" lesson: `TodoSummary` doesn't need its own state at
+ *           all — the count is a pure function of the `todos` prop it
+ *           already has, recomputed fresh every render. Establishes that
+ *           not every component needs `useState`; some just need the right
+ *           props and a pure calculation.
+ *   d5-t6 — a `FilterBar` component that owns **its own local UI-only
+ *           state** (which filter — all/active/done — is selected) and a
+ *           `filterTodos(todos, filter)` helper that `App` uses to decide
+ *           *what* `TodoList` renders. This is composition's payoff: the
+ *           filter selection is local to `FilterBar` (nothing else needs to
+ *           know mid-click what's hovered), but the *result* of filtering
+ *           flows back through `App` as a prop to `TodoList` — the same
+ *           "local state reports up, shared data flows down through props"
+ *           pattern from every earlier Day 5 task, now composing three
+ *           siblings (`FilterBar`, `TodoList`, `TodoSummary`) under one
+ *           `App`.
  *
  * Hidden tests follow Day 4's proven approach exactly (see day4.ts's doc
  * comment): every hidden test exercises a **pure, dependency-free helper
@@ -726,6 +755,1044 @@ export const day5: Day = {
         "wires TodoList's props, TodoList owns the .map()/key loop and forwards " +
         "onToggleTodo, TodoItem only knows its own todo + onToggle), with no component " +
         "reaching past its immediate child/parent's props contract.",
+    },
+
+    // ------------------------------------------------------------------
+    // d5-t4 — AddTodoForm: local input state, reports up via onAdd
+    // ------------------------------------------------------------------
+    {
+      id: "d5-t4",
+      title: "Add an AddTodoForm with its own local input state",
+      description:
+        "## Add an AddTodoForm with its own local input state\n\n" +
+        "Every component so far either owns *shared* state (`App`'s " +
+        "`todos`) or no state at all (`TodoItem`, `TodoList` just render " +
+        "props). Now build one that owns state nothing else needs to know " +
+        "about: the text currently being typed into a new-todo input.\n\n" +
+        "Ask the same question d5-t2 asked, but notice the answer flips " +
+        "this time: **where should the in-progress input text live?** It " +
+        "would work to lift it into `App` too — but nothing outside the " +
+        "form cares what's half-typed before Submit is clicked. That's the " +
+        "signal for **local** state: if only one component ever reads or " +
+        "writes a piece of state, it belongs in that component's own " +
+        "`useState`, not lifted to a parent \"just in case.\" Lifting " +
+        "*everything* up by default just recreates prop-drilling for no " +
+        "benefit.\n\n" +
+        "```jsx\n" +
+        "function AddTodoForm({ onAdd }) {\n" +
+        '  const [text, setText] = useState("");\n\n' +
+        "  function handleSubmit(event) {\n" +
+        "    event.preventDefault();\n" +
+        "    const trimmed = text.trim();\n" +
+        "    if (trimmed === \"\") return;\n" +
+        "    onAdd(trimmed);\n" +
+        '    setText("");\n' +
+        "  }\n\n" +
+        "  return (\n" +
+        "    <form onSubmit={handleSubmit}>\n" +
+        "      <input\n" +
+        "        value={text}\n" +
+        "        onChange={(event) => setText(event.target.value)}\n" +
+        "      />\n" +
+        '      <button type="submit">Add</button>\n' +
+        "    </form>\n" +
+        "  );\n" +
+        "}\n" +
+        "```\n\n" +
+        "Notice the shape: `text` is `AddTodoForm`'s **own** state — `App` " +
+        "never sees a single keystroke. Only the *finished* title, handed " +
+        "to `onAdd` on submit, crosses the component boundary. This mirrors " +
+        "d5-t2's `onToggle` exactly: a child reports intent via a callback " +
+        "prop, a parent (here, `App`) owns what happens with the shared " +
+        "`todos` array.\n\n" +
+        "**Your job:** create `AddTodoForm.jsx` matching the shape above " +
+        "(local `text` state, trims and guards against an empty submit, " +
+        "calls `onAdd(trimmed)`, clears `text` after), wire it into " +
+        "`App.jsx` with a `handleAdd(title)` that appends a new todo to " +
+        "`todos` via `setTodos`, AND implement the pure helper " +
+        "`buildNewTodo(title, nextId)` in `view.js` — given a trimmed " +
+        "title string and the id to assign, returns a new todo object " +
+        "`{ id: nextId, title, done: false }` (the exact shape `handleAdd` " +
+        "appends to `todos`).",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day5-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem key={todo.id} todo={todo} onToggle={onToggleTodo} />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "AddTodoForm.jsx":
+          "// TODO: build AddTodoForm({ onAdd }) with its own local `text` state.\n" +
+          "// On submit: trim text, bail if empty, call onAdd(trimmed), clear text.\n" +
+          "import { useState } from \"react\";\n\n" +
+          "function AddTodoForm(props) {\n" +
+          "  return null;\n" +
+          "}\n\n" +
+          "export default AddTodoForm;\n",
+        "App.jsx":
+          'import { useState } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n\n' +
+          "export default function App() {\n" +
+          "  const [todos, setTodos] = useState([\n" +
+          '    { id: 1, title: "Learn components", done: false },\n' +
+          '    { id: 2, title: "Learn props", done: false },\n' +
+          '    { id: 3, title: "Learn state", done: false },\n' +
+          "  ]);\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),\n" +
+          "    );\n" +
+          "  }\n\n" +
+          "  // TODO: import AddTodoForm, add handleAdd(title) that appends a new\n" +
+          "  // todo (nextId = one greater than the current highest id, or use\n" +
+          "  // todos.length + 1 style bookkeeping — see view.js's buildNewTodo)\n" +
+          "  // to todos via setTodos, and render <AddTodoForm onAdd={handleAdd} />\n" +
+          "  // above <TodoList ... />.\n\n" +
+          "  return <TodoList todos={todos} onToggleTodo={handleToggle} />;\n" +
+          "}\n",
+        "view.js":
+          "export function todoItemLabel(todo) {\n" +
+          "  return todo.title;\n" +
+          "}\n\n" +
+          "export function toggleTodoDone(todos, id) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));\n" +
+          "}\n\n" +
+          "export function todoKeys(todos) {\n" +
+          "  return todos.map((t) => t.id);\n" +
+          "}\n\n" +
+          "// TODO: implement buildNewTodo(title, nextId) -> { id: nextId, title, done: false }\n" +
+          "export function buildNewTodo(title, nextId) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`useState(\"\")` for `text` lives entirely inside `AddTodoForm` — `App` never imports or reads it; only the finished string reaches `App`, via `onAdd`.",
+        "`value={text}` + `onChange={(event) => setText(event.target.value)}` makes the input controlled, same pattern as every earlier controlled input in this course.",
+        "Guard against submitting an empty/whitespace-only title: `if (trimmed === \"\") return;` before calling `onAdd`, so blank todos never get created.",
+        "`buildNewTodo` is a one-line object literal: `return { id: nextId, title, done: false };` — match the field order/shape exactly.",
+      ],
+      hiddenTests: [
+        {
+          filename: "build-new-todo.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { buildNewTodo } from "./view.js";\n\n' +
+            'test("buildNewTodo builds a not-done todo with the given id and title", () => {\n' +
+            '  expect(buildNewTodo("Buy milk", 4)).toEqual({\n' +
+            "    id: 4,\n" +
+            '    title: "Buy milk",\n' +
+            "    done: false,\n" +
+            "  });\n" +
+            "});\n\n" +
+            'test("buildNewTodo works with a different id/title pair", () => {\n' +
+            '  expect(buildNewTodo("Walk the dog", 10)).toEqual({\n' +
+            "    id: 10,\n" +
+            '    title: "Walk the dog",\n' +
+            "    done: false,\n" +
+            "  });\n" +
+            "});\n",
+        },
+        {
+          filename: "add-form-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("AddTodoForm.jsx owns its own local text state via useState", async () => {\n' +
+            '  const jsx = await Bun.file("AddTodoForm.jsx").text();\n' +
+            '  expect(/useState\\(\\s*["\']["\']\\s*\\)/.test(jsx)).toBe(true);\n' +
+            "  expect(/onAdd/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("AddTodoForm.jsx renders a controlled input wired to its local state", async () => {\n' +
+            '  const jsx = await Bun.file("AddTodoForm.jsx").text();\n' +
+            "  expect(/value=\\{text\\}/.test(jsx)).toBe(true);\n" +
+            "  expect(/onChange=\\{/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("AddTodoForm.jsx is the default export", async () => {\n' +
+            '  const jsx = await Bun.file("AddTodoForm.jsx").text();\n' +
+            "  expect(/export default AddTodoForm/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx imports AddTodoForm, defines handleAdd, and passes onAdd", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/import\\s+AddTodoForm\\s+from\\s+["\']\\.\\/AddTodoForm\\.jsx["\']/.test(jsx)).toBe(\n' +
+            "    true,\n" +
+            "  );\n" +
+            "  expect(/function handleAdd/.test(jsx)).toBe(true);\n" +
+            "  expect(/<AddTodoForm/.test(jsx)).toBe(true);\n" +
+            "  expect(/onAdd=\\{handleAdd\\}/.test(jsx)).toBe(true);\n" +
+            "  expect(/setTodos\\(/.test(jsx)).toBe(true);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day5-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem key={todo.id} todo={todo} onToggle={onToggleTodo} />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "AddTodoForm.jsx":
+          'import { useState } from "react";\n\n' +
+          "function AddTodoForm({ onAdd }) {\n" +
+          '  const [text, setText] = useState("");\n\n' +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const trimmed = text.trim();\n" +
+          '    if (trimmed === "") return;\n' +
+          "    onAdd(trimmed);\n" +
+          '    setText("");\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <form onSubmit={handleSubmit}>\n" +
+          "      <input\n" +
+          "        value={text}\n" +
+          "        onChange={(event) => setText(event.target.value)}\n" +
+          "      />\n" +
+          '      <button type="submit">Add</button>\n' +
+          "    </form>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default AddTodoForm;\n",
+        "App.jsx":
+          'import { useState } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import AddTodoForm from "./AddTodoForm.jsx";\n\n' +
+          "export default function App() {\n" +
+          "  const [todos, setTodos] = useState([\n" +
+          '    { id: 1, title: "Learn components", done: false },\n' +
+          '    { id: 2, title: "Learn props", done: false },\n' +
+          '    { id: 3, title: "Learn state", done: false },\n' +
+          "  ]);\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),\n" +
+          "    );\n" +
+          "  }\n\n" +
+          "  function handleAdd(title) {\n" +
+          "    setTodos((current) => {\n" +
+          "      const nextId = current.reduce((max, t) => Math.max(max, t.id), 0) + 1;\n" +
+          "      return [...current, { id: nextId, title, done: false }];\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <AddTodoForm onAdd={handleAdd} />\n" +
+          "      <TodoList todos={todos} onToggleTodo={handleToggle} />\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function todoItemLabel(todo) {\n" +
+          "  return todo.title;\n" +
+          "}\n\n" +
+          "export function toggleTodoDone(todos, id) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));\n" +
+          "}\n\n" +
+          "export function todoKeys(todos) {\n" +
+          "  return todos.map((t) => t.id);\n" +
+          "}\n\n" +
+          "export function buildNewTodo(title, nextId) {\n" +
+          "  return { id: nextId, title, done: false };\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm AddTodoForm owns its input text purely as local useState (App never " +
+        "reads a keystroke), that submit trims/guards against empty input before calling " +
+        "onAdd, and that App owns the resulting todos update via setTodos in handleAdd " +
+        "— the same 'local UI state vs shared data' split as d5-t2's onToggle.",
+    },
+
+    // ------------------------------------------------------------------
+    // d5-t5 — TodoSummary: a derived value from props, no state needed
+    // ------------------------------------------------------------------
+    {
+      id: "d5-t5",
+      title: "Add a TodoSummary that derives a count from props",
+      description:
+        "## Add a TodoSummary that derives a count from props\n\n" +
+        "Not every component needs `useState`. `TodoSummary` renders " +
+        '"2 of 3 done" — a value that\'s entirely **derived** from the ' +
+        "`todos` array `App` already owns. There's no new fact to " +
+        "remember here, only a calculation to perform on data that " +
+        "already exists, so giving `TodoSummary` its own state to track " +
+        "the count would be a mistake: it would need to be kept in sync " +
+        "by hand every time a todo is toggled or added, reintroducing " +
+        "exactly the kind of manual-sync bug Day 2 and Day 3 spent so much " +
+        "effort avoiding. The fix is simpler than a new state variable: " +
+        "**compute it fresh, every render**, straight from the prop.\n\n" +
+        "```jsx\n" +
+        "function TodoSummary({ todos }) {\n" +
+        "  const doneCount = todos.filter((t) => t.done).length;\n" +
+        "  return (\n" +
+        '    <p className="todo-summary">\n' +
+        "      {doneCount} of {todos.length} done\n" +
+        "    </p>\n" +
+        "  );\n" +
+        "}\n" +
+        "```\n\n" +
+        "Because React re-renders `App` (and everything under it) whenever " +
+        "`todos` changes, `TodoSummary` recalculates `doneCount` on every " +
+        "render automatically — no `useEffect`, no manual \"update the " +
+        'count when a todo toggles" wiring. This is the general rule: if a ' +
+        "value can be *computed* from props/state you already have, " +
+        "compute it during render instead of storing it as its own piece " +
+        "of state. Fewer state variables means fewer ways for the UI to " +
+        "drift out of sync with the data that actually matters.\n\n" +
+        "**Your job:** create `TodoSummary.jsx` matching the shape above, " +
+        "render it in `App.jsx` (alongside `AddTodoForm` and `TodoList`, " +
+        "passing the same `todos` prop `TodoList` receives), AND implement " +
+        "the pure helper `countDone(todos)` in `view.js` — given an array " +
+        "of todos, returns the number whose `done` field is `true` (the " +
+        "same count `TodoSummary` renders).",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day5-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem key={todo.id} todo={todo} onToggle={onToggleTodo} />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "AddTodoForm.jsx":
+          'import { useState } from "react";\n\n' +
+          "function AddTodoForm({ onAdd }) {\n" +
+          '  const [text, setText] = useState("");\n\n' +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const trimmed = text.trim();\n" +
+          '    if (trimmed === "") return;\n' +
+          "    onAdd(trimmed);\n" +
+          '    setText("");\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <form onSubmit={handleSubmit}>\n" +
+          "      <input\n" +
+          "        value={text}\n" +
+          "        onChange={(event) => setText(event.target.value)}\n" +
+          "      />\n" +
+          '      <button type="submit">Add</button>\n' +
+          "    </form>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default AddTodoForm;\n",
+        "TodoSummary.jsx":
+          "// TODO: build TodoSummary({ todos }) that derives and renders a\n" +
+          '// doneCount / total string, no useState needed — compute during render.\n' +
+          "function TodoSummary(props) {\n" +
+          "  return null;\n" +
+          "}\n\n" +
+          "export default TodoSummary;\n",
+        "App.jsx":
+          'import { useState } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import AddTodoForm from "./AddTodoForm.jsx";\n\n' +
+          "export default function App() {\n" +
+          "  const [todos, setTodos] = useState([\n" +
+          '    { id: 1, title: "Learn components", done: false },\n' +
+          '    { id: 2, title: "Learn props", done: false },\n' +
+          '    { id: 3, title: "Learn state", done: true },\n' +
+          "  ]);\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),\n" +
+          "    );\n" +
+          "  }\n\n" +
+          "  function handleAdd(title) {\n" +
+          "    setTodos((current) => {\n" +
+          "      const nextId = current.reduce((max, t) => Math.max(max, t.id), 0) + 1;\n" +
+          "      return [...current, { id: nextId, title, done: false }];\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  // TODO: import TodoSummary and render <TodoSummary todos={todos} />\n" +
+          "  // somewhere in the returned JSX (e.g. above AddTodoForm).\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <AddTodoForm onAdd={handleAdd} />\n" +
+          "      <TodoList todos={todos} onToggleTodo={handleToggle} />\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function todoItemLabel(todo) {\n" +
+          "  return todo.title;\n" +
+          "}\n\n" +
+          "export function toggleTodoDone(todos, id) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));\n" +
+          "}\n\n" +
+          "export function todoKeys(todos) {\n" +
+          "  return todos.map((t) => t.id);\n" +
+          "}\n\n" +
+          "export function buildNewTodo(title, nextId) {\n" +
+          "  return { id: nextId, title, done: false };\n" +
+          "}\n\n" +
+          "// TODO: implement countDone(todos) -> number of todos whose done === true\n" +
+          "export function countDone(todos) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`TodoSummary` needs zero `useState` calls — resist adding one. The count is fully determined by the `todos` prop it already receives.",
+        "`todos.filter((t) => t.done).length` computed directly in the function body (not inside a `useEffect`) is recalculated automatically every time `App` re-renders with new `todos`.",
+        "`countDone` is a one-line filter+length: `return todos.filter((t) => t.done).length;`.",
+        "Render `<TodoSummary todos={todos} />` alongside `<TodoList todos={todos} .../>` in `App.jsx` — both siblings read the same `todos` state, no prop-drilling required since they're both direct children of `App`.",
+      ],
+      hiddenTests: [
+        {
+          filename: "count-done.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { countDone } from "./view.js";\n\n' +
+            'test("countDone counts todos with done === true", () => {\n' +
+            "  const todos = [\n" +
+            '    { id: 1, title: "A", done: true },\n' +
+            '    { id: 2, title: "B", done: false },\n' +
+            '    { id: 3, title: "C", done: true },\n' +
+            "  ];\n" +
+            "  expect(countDone(todos)).toBe(2);\n" +
+            "});\n\n" +
+            'test("countDone is 0 when none are done", () => {\n' +
+            '  const todos = [{ id: 1, title: "A", done: false }];\n' +
+            "  expect(countDone(todos)).toBe(0);\n" +
+            "});\n\n" +
+            'test("countDone is 0 for an empty array", () => {\n' +
+            "  expect(countDone([])).toBe(0);\n" +
+            "});\n",
+        },
+        {
+          filename: "summary-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("TodoSummary.jsx derives its count from the todos prop, no useState", async () => {\n' +
+            '  const jsx = await Bun.file("TodoSummary.jsx").text();\n' +
+            "  expect(/useState/.test(jsx)).toBe(false);\n" +
+            "  expect(/\\{\\s*todos\\s*\\}/.test(jsx)).toBe(true);\n" +
+            "  expect(/todos\\.filter/.test(jsx)).toBe(true);\n" +
+            "  expect(/todos\\.length/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("TodoSummary.jsx is the default export", async () => {\n' +
+            '  const jsx = await Bun.file("TodoSummary.jsx").text();\n' +
+            "  expect(/export default TodoSummary/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx imports TodoSummary and renders it with the todos prop", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/import\\s+TodoSummary\\s+from\\s+["\']\\.\\/TodoSummary\\.jsx["\']/.test(jsx)).toBe(\n' +
+            "    true,\n" +
+            "  );\n" +
+            "  expect(/<TodoSummary/.test(jsx)).toBe(true);\n" +
+            "  expect(/todos=\\{todos\\}/.test(jsx)).toBe(true);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day5-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem key={todo.id} todo={todo} onToggle={onToggleTodo} />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "AddTodoForm.jsx":
+          'import { useState } from "react";\n\n' +
+          "function AddTodoForm({ onAdd }) {\n" +
+          '  const [text, setText] = useState("");\n\n' +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const trimmed = text.trim();\n" +
+          '    if (trimmed === "") return;\n' +
+          "    onAdd(trimmed);\n" +
+          '    setText("");\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <form onSubmit={handleSubmit}>\n" +
+          "      <input\n" +
+          "        value={text}\n" +
+          "        onChange={(event) => setText(event.target.value)}\n" +
+          "      />\n" +
+          '      <button type="submit">Add</button>\n' +
+          "    </form>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default AddTodoForm;\n",
+        "TodoSummary.jsx":
+          "function TodoSummary({ todos }) {\n" +
+          "  const doneCount = todos.filter((t) => t.done).length;\n" +
+          "  return (\n" +
+          '    <p className="todo-summary">\n' +
+          "      {doneCount} of {todos.length} done\n" +
+          "    </p>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoSummary;\n",
+        "App.jsx":
+          'import { useState } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import AddTodoForm from "./AddTodoForm.jsx";\n' +
+          'import TodoSummary from "./TodoSummary.jsx";\n\n' +
+          "export default function App() {\n" +
+          "  const [todos, setTodos] = useState([\n" +
+          '    { id: 1, title: "Learn components", done: false },\n' +
+          '    { id: 2, title: "Learn props", done: false },\n' +
+          '    { id: 3, title: "Learn state", done: true },\n' +
+          "  ]);\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),\n" +
+          "    );\n" +
+          "  }\n\n" +
+          "  function handleAdd(title) {\n" +
+          "    setTodos((current) => {\n" +
+          "      const nextId = current.reduce((max, t) => Math.max(max, t.id), 0) + 1;\n" +
+          "      return [...current, { id: nextId, title, done: false }];\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <TodoSummary todos={todos} />\n" +
+          "      <AddTodoForm onAdd={handleAdd} />\n" +
+          "      <TodoList todos={todos} onToggleTodo={handleToggle} />\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function todoItemLabel(todo) {\n" +
+          "  return todo.title;\n" +
+          "}\n\n" +
+          "export function toggleTodoDone(todos, id) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));\n" +
+          "}\n\n" +
+          "export function todoKeys(todos) {\n" +
+          "  return todos.map((t) => t.id);\n" +
+          "}\n\n" +
+          "export function buildNewTodo(title, nextId) {\n" +
+          "  return { id: nextId, title, done: false };\n" +
+          "}\n\n" +
+          "export function countDone(todos) {\n" +
+          "  return todos.filter((t) => t.done).length;\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm TodoSummary has no useState and no useEffect — the done count is " +
+        "computed directly in the function body from the todos prop on every render, " +
+        "demonstrating that derived values don't need their own state slot.",
+    },
+
+    // ------------------------------------------------------------------
+    // d5-t6 — FilterBar: local UI state drives what a sibling renders
+    // ------------------------------------------------------------------
+    {
+      id: "d5-t6",
+      title: "Add a FilterBar with local state that filters TodoList",
+      description:
+        "## Add a FilterBar with local state that filters TodoList\n\n" +
+        "Last piece: let the learner filter the list to All / Active / " +
+        "Done. This combines every lesson Day 5 has taught into one " +
+        "component tree. Ask the state-placement question one more time: " +
+        "**which filter is currently selected** is UI-only — nothing " +
+        "outside `FilterBar` needs to know a button is mid-hover — so it " +
+        "stays local to `FilterBar`'s own `useState`, same reasoning as " +
+        "d5-t4's `text`. But the *result* of applying that filter (which " +
+        "todos actually get rendered) has to reach `TodoList`, a sibling " +
+        "component `FilterBar` has no direct connection to — so, same as " +
+        "every other cross-component communication this Day, it flows " +
+        "back up through a callback prop to the shared parent, `App`:\n\n" +
+        "```jsx\n" +
+        "function FilterBar({ filter, onFilterChange }) {\n" +
+        "  return (\n" +
+        '    <div className="filter-bar">\n' +
+        "      {[\"all\", \"active\", \"done\"].map((option) => (\n" +
+        "        <button\n" +
+        "          key={option}\n" +
+        "          onClick={() => onFilterChange(option)}\n" +
+        '          aria-pressed={filter === option}\n' +
+        "        >\n" +
+        "          {option}\n" +
+        "        </button>\n" +
+        "      ))}\n" +
+        "    </div>\n" +
+        "  );\n" +
+        "}\n" +
+        "```\n\n" +
+        "Notice `FilterBar` itself takes `filter` as a **prop**, not local " +
+        "state — `App` owns which filter is active (it's the value that " +
+        "decides what `TodoList` renders, so it lives in `App`, the " +
+        "closest common parent of `FilterBar` and `TodoList`, exactly d5-" +
+        "t2's lifting-state-up lesson again). `App` then derives the " +
+        "*filtered* array before handing it to `TodoList`:\n\n" +
+        "```jsx\n" +
+        "const visibleTodos = filterTodos(todos, filter);\n" +
+        "// ...\n" +
+        "<TodoList todos={visibleTodos} onToggleTodo={handleToggle} />\n" +
+        "```\n\n" +
+        "**Your job:** create `FilterBar.jsx` matching the shape above, " +
+        "add `filter` state (`useState(\"all\")`) to `App.jsx` plus a " +
+        "`handleFilterChange` that updates it, render `<FilterBar " +
+        "filter={filter} onFilterChange={handleFilterChange} />` and pass " +
+        "`TodoList` the *filtered* todos instead of the raw array, AND " +
+        "implement the pure helper `filterTodos(todos, filter)` in " +
+        '`view.js` — returns every todo when `filter === "all"`, only ' +
+        'todos with `done === true` when `filter === "done"`, only todos ' +
+        'with `done === false` when `filter === "active"`.',
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day5-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem key={todo.id} todo={todo} onToggle={onToggleTodo} />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "AddTodoForm.jsx":
+          'import { useState } from "react";\n\n' +
+          "function AddTodoForm({ onAdd }) {\n" +
+          '  const [text, setText] = useState("");\n\n' +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const trimmed = text.trim();\n" +
+          '    if (trimmed === "") return;\n' +
+          "    onAdd(trimmed);\n" +
+          '    setText("");\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <form onSubmit={handleSubmit}>\n" +
+          "      <input\n" +
+          "        value={text}\n" +
+          "        onChange={(event) => setText(event.target.value)}\n" +
+          "      />\n" +
+          '      <button type="submit">Add</button>\n' +
+          "    </form>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default AddTodoForm;\n",
+        "TodoSummary.jsx":
+          "function TodoSummary({ todos }) {\n" +
+          "  const doneCount = todos.filter((t) => t.done).length;\n" +
+          "  return (\n" +
+          '    <p className="todo-summary">\n' +
+          "      {doneCount} of {todos.length} done\n" +
+          "    </p>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoSummary;\n",
+        "FilterBar.jsx":
+          "// TODO: build FilterBar({ filter, onFilterChange }) — a row of\n" +
+          '// all/active/done buttons; clicking one calls onFilterChange(option).\n' +
+          "// `filter` is a PROP here (App owns it), not local state.\n" +
+          "function FilterBar(props) {\n" +
+          "  return null;\n" +
+          "}\n\n" +
+          "export default FilterBar;\n",
+        "App.jsx":
+          'import { useState } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import AddTodoForm from "./AddTodoForm.jsx";\n' +
+          'import TodoSummary from "./TodoSummary.jsx";\n\n' +
+          "export default function App() {\n" +
+          "  const [todos, setTodos] = useState([\n" +
+          '    { id: 1, title: "Learn components", done: false },\n' +
+          '    { id: 2, title: "Learn props", done: false },\n' +
+          '    { id: 3, title: "Learn state", done: true },\n' +
+          "  ]);\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),\n" +
+          "    );\n" +
+          "  }\n\n" +
+          "  function handleAdd(title) {\n" +
+          "    setTodos((current) => {\n" +
+          "      const nextId = current.reduce((max, t) => Math.max(max, t.id), 0) + 1;\n" +
+          "      return [...current, { id: nextId, title, done: false }];\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  // TODO: add `filter` state (useState(\"all\")) + handleFilterChange,\n" +
+          "  // import FilterBar, render it above TodoList wired to filter state,\n" +
+          "  // and pass TodoList the FILTERED todos (see view.js's filterTodos)\n" +
+          "  // instead of the raw todos array.\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <TodoSummary todos={todos} />\n" +
+          "      <AddTodoForm onAdd={handleAdd} />\n" +
+          "      <TodoList todos={todos} onToggleTodo={handleToggle} />\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function todoItemLabel(todo) {\n" +
+          "  return todo.title;\n" +
+          "}\n\n" +
+          "export function toggleTodoDone(todos, id) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));\n" +
+          "}\n\n" +
+          "export function todoKeys(todos) {\n" +
+          "  return todos.map((t) => t.id);\n" +
+          "}\n\n" +
+          "export function buildNewTodo(title, nextId) {\n" +
+          "  return { id: nextId, title, done: false };\n" +
+          "}\n\n" +
+          "export function countDone(todos) {\n" +
+          "  return todos.filter((t) => t.done).length;\n" +
+          "}\n\n" +
+          "// TODO: implement filterTodos(todos, filter) -> filtered array.\n" +
+          '// filter is one of "all" | "active" | "done".\n' +
+          "export function filterTodos(todos, filter) {\n" +
+          "}\n",
+      },
+      hints: [
+        '`filter` itself is a **prop** on `FilterBar`, owned by `App` — `FilterBar` never calls `useState` for it; it only calls `onFilterChange(option)` when a button is clicked.',
+        '`aria-pressed={filter === option}` is a nice touch for indicating the active filter, but the graded behavior is just that clicking a button calls `onFilterChange` with that button\'s option string.',
+        '`filterTodos` is a 3-way branch: `"all"` returns the array as-is (or a shallow copy), `"done"` filters `t.done === true`, `"active"` filters `t.done === false`.',
+        "In `App.jsx`, compute `const visibleTodos = filterTodos(todos, filter);` right before the `return`, and pass `todos={visibleTodos}` to `TodoList` — `TodoSummary` still gets the full, unfiltered `todos` so the count reflects everything, not just what's currently visible.",
+      ],
+      hiddenTests: [
+        {
+          filename: "filter-todos.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { filterTodos } from "./view.js";\n\n' +
+            "const todos = [\n" +
+            '  { id: 1, title: "A", done: false },\n' +
+            '  { id: 2, title: "B", done: true },\n' +
+            '  { id: 3, title: "C", done: false },\n' +
+            "];\n\n" +
+            'test(\'filterTodos returns everything for "all"\', () => {\n' +
+            '  expect(filterTodos(todos, "all")).toEqual(todos);\n' +
+            "});\n\n" +
+            'test(\'filterTodos returns only done todos for "done"\', () => {\n' +
+            '  expect(filterTodos(todos, "done")).toEqual([\n' +
+            '    { id: 2, title: "B", done: true },\n' +
+            "  ]);\n" +
+            "});\n\n" +
+            'test(\'filterTodos returns only not-done todos for "active"\', () => {\n' +
+            '  expect(filterTodos(todos, "active")).toEqual([\n' +
+            '    { id: 1, title: "A", done: false },\n' +
+            '    { id: 3, title: "C", done: false },\n' +
+            "  ]);\n" +
+            "});\n\n" +
+            'test("filterTodos returns an empty array when nothing matches", () => {\n' +
+            '  const allDone = [{ id: 1, title: "A", done: true }];\n' +
+            '  expect(filterTodos(allDone, "active")).toEqual([]);\n' +
+            "});\n",
+        },
+        {
+          filename: "filter-bar-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("FilterBar.jsx takes filter as a prop, not local state", async () => {\n' +
+            '  const jsx = await Bun.file("FilterBar.jsx").text();\n' +
+            "  expect(/useState/.test(jsx)).toBe(false);\n" +
+            "  expect(/\\bfilter\\b/.test(jsx)).toBe(true);\n" +
+            "  expect(/onFilterChange/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("FilterBar.jsx is the default export", async () => {\n' +
+            '  const jsx = await Bun.file("FilterBar.jsx").text();\n' +
+            "  expect(/export default FilterBar/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx owns filter state and passes it + a change handler to FilterBar", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/import\\s+FilterBar\\s+from\\s+["\']\\.\\/FilterBar\\.jsx["\']/.test(jsx)).toBe(\n' +
+            "    true,\n" +
+            "  );\n" +
+            '  expect(/useState\\(\\s*["\']all["\']\\s*\\)/.test(jsx)).toBe(true);\n' +
+            "  expect(/<FilterBar/.test(jsx)).toBe(true);\n" +
+            "  expect(/filter=\\{filter\\}/.test(jsx)).toBe(true);\n" +
+            "  expect(/onFilterChange=\\{/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx passes TodoList the filtered todos, not the raw array", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/filterTodos\\(/.test(jsx)).toBe(true);\n" +
+            "  expect(/<TodoList[^>]*todos=\\{todos\\}/.test(jsx)).toBe(false);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day5-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem key={todo.id} todo={todo} onToggle={onToggleTodo} />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "AddTodoForm.jsx":
+          'import { useState } from "react";\n\n' +
+          "function AddTodoForm({ onAdd }) {\n" +
+          '  const [text, setText] = useState("");\n\n' +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const trimmed = text.trim();\n" +
+          '    if (trimmed === "") return;\n' +
+          "    onAdd(trimmed);\n" +
+          '    setText("");\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <form onSubmit={handleSubmit}>\n" +
+          "      <input\n" +
+          "        value={text}\n" +
+          "        onChange={(event) => setText(event.target.value)}\n" +
+          "      />\n" +
+          '      <button type="submit">Add</button>\n' +
+          "    </form>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default AddTodoForm;\n",
+        "TodoSummary.jsx":
+          "function TodoSummary({ todos }) {\n" +
+          "  const doneCount = todos.filter((t) => t.done).length;\n" +
+          "  return (\n" +
+          '    <p className="todo-summary">\n' +
+          "      {doneCount} of {todos.length} done\n" +
+          "    </p>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoSummary;\n",
+        "FilterBar.jsx":
+          "function FilterBar({ filter, onFilterChange }) {\n" +
+          "  return (\n" +
+          '    <div className="filter-bar">\n' +
+          '      {["all", "active", "done"].map((option) => (\n' +
+          "        <button\n" +
+          "          key={option}\n" +
+          "          onClick={() => onFilterChange(option)}\n" +
+          "          aria-pressed={filter === option}\n" +
+          "        >\n" +
+          "          {option}\n" +
+          "        </button>\n" +
+          "      ))}\n" +
+          "    </div>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default FilterBar;\n",
+        "App.jsx":
+          'import { useState } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import AddTodoForm from "./AddTodoForm.jsx";\n' +
+          'import TodoSummary from "./TodoSummary.jsx";\n' +
+          'import FilterBar from "./FilterBar.jsx";\n\n' +
+          "function filterTodos(todos, filter) {\n" +
+          '  if (filter === "done") return todos.filter((t) => t.done);\n' +
+          '  if (filter === "active") return todos.filter((t) => !t.done);\n' +
+          "  return todos;\n" +
+          "}\n\n" +
+          "export default function App() {\n" +
+          "  const [todos, setTodos] = useState([\n" +
+          '    { id: 1, title: "Learn components", done: false },\n' +
+          '    { id: 2, title: "Learn props", done: false },\n' +
+          '    { id: 3, title: "Learn state", done: true },\n' +
+          "  ]);\n" +
+          '  const [filter, setFilter] = useState("all");\n\n' +
+          "  function handleToggle(id) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)),\n" +
+          "    );\n" +
+          "  }\n\n" +
+          "  function handleAdd(title) {\n" +
+          "    setTodos((current) => {\n" +
+          "      const nextId = current.reduce((max, t) => Math.max(max, t.id), 0) + 1;\n" +
+          "      return [...current, { id: nextId, title, done: false }];\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleFilterChange(nextFilter) {\n" +
+          "    setFilter(nextFilter);\n" +
+          "  }\n\n" +
+          "  const visibleTodos = filterTodos(todos, filter);\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <TodoSummary todos={todos} />\n" +
+          "      <AddTodoForm onAdd={handleAdd} />\n" +
+          "      <FilterBar filter={filter} onFilterChange={handleFilterChange} />\n" +
+          "      <TodoList todos={visibleTodos} onToggleTodo={handleToggle} />\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function todoItemLabel(todo) {\n" +
+          "  return todo.title;\n" +
+          "}\n\n" +
+          "export function toggleTodoDone(todos, id) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t));\n" +
+          "}\n\n" +
+          "export function todoKeys(todos) {\n" +
+          "  return todos.map((t) => t.id);\n" +
+          "}\n\n" +
+          "export function buildNewTodo(title, nextId) {\n" +
+          "  return { id: nextId, title, done: false };\n" +
+          "}\n\n" +
+          "export function countDone(todos) {\n" +
+          "  return todos.filter((t) => t.done).length;\n" +
+          "}\n\n" +
+          "export function filterTodos(todos, filter) {\n" +
+          '  if (filter === "done") return todos.filter((t) => t.done);\n' +
+          '  if (filter === "active") return todos.filter((t) => !t.done);\n' +
+          "  return todos;\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm FilterBar receives `filter` as a prop (no internal useState for it) and " +
+        "only reports intent via onFilterChange; confirm App owns the filter state and " +
+        "derives visibleTodos via filterTodos before handing them to TodoList, while " +
+        "TodoSummary still sees the full unfiltered todos array for its count.",
     },
   ],
 };
