@@ -8,8 +8,10 @@
  * already exists in the runtime; these tasks are authored purely against its
  * stable contract:
  *
- *   GET  /api/todos       -> 200 JSON array of { id, title, done }
- *   POST /api/todos       -> body { title }        -> 201 JSON the created todo
+ *   GET    /api/todos       -> 200 JSON array of { id, title, done }
+ *   POST   /api/todos       -> body { title }        -> 201 JSON the created todo
+ *   PUT    /api/todos/:id   -> body { done }         -> 200 JSON the updated todo
+ *   DELETE /api/todos/:id   ->                       -> 200/204 on success
  *
  * Philosophy: "You can't appreciate the solution until you've felt the
  * problem." Day 3 is where the hand-rolled state model from Day 2 (already
@@ -38,6 +40,32 @@
  *           sync is unbounded work" moment Day 4 (React) resolves for free
  *           with declarative re-renders driven by a single state update
  *           (and later, in Day 6, `useEffect` cleanup/AbortController).
+ *   d3-t4 — toggling "done" becomes a `PUT /api/todos/:id` request: same
+ *           optimistic-then-reconcile-or-rollback shape as d3-t2, but now
+ *           the learner must find the *specific* todo to flip by id inside
+ *           an array, mutate a copy of just that one item, and remember to
+ *           revert **that exact item** (not the whole list) if the PUT
+ *           fails. Every new mutation type multiplies the hand-written
+ *           bookkeeping from scratch.
+ *   d3-t5 — deleting a todo becomes a `DELETE /api/todos/:id` request:
+ *           optimistic removal (splice it out, re-render immediately) that
+ *           must be **rolled back by re-inserting the exact todo at its
+ *           original position** if the DELETE fails — otherwise a failed
+ *           delete silently succeeds on screen while the server still has
+ *           the row. This is the sharpest edge yet: unlike add (rollback =
+ *           remove) or toggle (rollback = flip back), delete's rollback
+ *           requires remembering *where* the item was, or the list's order
+ *           silently drifts from the server's.
+ *   d3-t6 — the double-submit pain task: nothing stops a learner from
+ *           clicking "Add" twice before the first POST resolves, firing two
+ *           optimistic todos and two POSTs. The fix is a hand-rolled
+ *           `isSubmitting` boolean that must be set to `true` before the
+ *           POST and reset to `false` in **every** exit path (success *and*
+ *           failure) — miss the failure path and the button stays disabled
+ *           forever after one failed request. This is the same class of
+ *           problem as d3-t1's status flag and d3-t3's requestId: one more
+ *           piece of state a human must remember to keep in sync by hand,
+ *           on every code path, forever.
  *
  * Tests are Bun-native (bun:test), string/regex assertions against the
  * authored `app.js` plus a handful of pure-logic assertions that exercise
@@ -807,6 +835,892 @@ export const day3: Day = {
         "Confirm the learner captures a per-call request id BEFORE the async gap (the " +
         "fetch), and discards (does not apply) any response whose captured id no " +
         "longer matches the latest counter value when it resolves.",
+    },
+
+    // ------------------------------------------------------------------
+    // d3-t4 — optimistic PUT toggle + per-item rollback
+    // ------------------------------------------------------------------
+    {
+      id: "d3-t4",
+      title: "Toggle done with an optimistic PUT (and a per-item rollback)",
+      description:
+        "## Toggle done with an optimistic PUT (and a per-item rollback)\n\n" +
+        "The starter renders each todo as a `.todo-item` `<li>` with a checkbox " +
+        '(`<input type="checkbox" class="todo-toggle" data-id="...">`) reflecting ' +
+        "`todo.done`. Toggling one should update the server: `PUT /api/todos/:id` " +
+        "with JSON body `{ done }`, returning `200` and the updated todo as JSON.\n\n" +
+        "Same optimistic idea as d3-t2's add, but now the mutation targets **one " +
+        "specific item inside the array** instead of appending to the end — which " +
+        "means rollback must restore **that exact item's previous value**, not just " +
+        "remove something.\n\n" +
+        "In `app.js`'s checkbox change handler:\n\n" +
+        "1. Read the todo's `id` from the checkbox's `data-id`, and find the " +
+        "   matching todo in `state.todos`. Remember its **current** `done` value " +
+        "   before changing anything (you'll need it for rollback).\n" +
+        "2. Optimistically flip that one todo's `done` in `state.todos` (leave every " +
+        "   other todo untouched) and `render()` immediately.\n" +
+        '3. `fetch(`/api/todos/${id}`, { method: "PUT", headers: { "Content-Type": ' +
+        '   "application/json" }, body: JSON.stringify({ done: newDone }) })`.\n' +
+        "4. **On success:** replace that todo in `state.todos` with the server's " +
+        "   returned todo (in case other fields changed server-side), then `render()`.\n" +
+        "5. **On failure:** put that todo's `done` back to the value you remembered " +
+        "   in step 1 (**only that item** — do not touch any other todo), set " +
+        '   `state.status = "error"`, then `render()`.\n\n' +
+        "**Notice what just happened:** rollback is no longer \"remove the thing we " +
+        "added\" (d3-t2) — it's \"remember and restore one field of one specific item " +
+        "buried inside an array,\" by hand, every time. Multiply this by every field " +
+        "a real to-do app might let you edit, and the bookkeeping compounds.",
+      starterCode: {
+        "index.html":
+          "<!doctype html>\n" +
+          '<html lang="en">\n' +
+          "  <head>\n" +
+          '    <meta charset="utf-8" />\n' +
+          "    <title>My To-Do List</title>\n" +
+          '    <link rel="stylesheet" href="style.css" />\n' +
+          "  </head>\n" +
+          "  <body>\n" +
+          "    <h1>My To-Dos</h1>\n\n" +
+          '    <ul id="todo-list"></ul>\n\n' +
+          '    <script src="app.js" defer></script>\n' +
+          "  </body>\n" +
+          "</html>\n",
+        "style.css":
+          "#todo-list {\n" +
+          "  list-style: none;\n" +
+          "  padding: 0;\n" +
+          "}\n\n" +
+          ".todo-item {\n" +
+          "  background-color: rgb(240, 240, 240);\n" +
+          "  padding: 10px;\n" +
+          "}\n\n" +
+          ".todo-status {\n" +
+          "  padding: 10px;\n" +
+          "  font-style: italic;\n" +
+          "  color: rgb(90, 90, 90);\n" +
+          "}\n",
+        "app.js":
+          "let state = {\n" +
+          '  status: "ready",\n' +
+          "  todos: [\n" +
+          '    { id: 1, title: "Buy milk", done: false },\n' +
+          '    { id: 2, title: "Walk the dog", done: true },\n' +
+          "  ],\n" +
+          "  error: null,\n" +
+          "};\n\n" +
+          "function render() {\n" +
+          '  const list = document.getElementById("todo-list");\n' +
+          '  list.innerHTML = "";\n\n' +
+          '  if (state.status === "error") {\n' +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-status";\n' +
+          '    li.textContent = "Failed to load todos.";\n' +
+          "    list.appendChild(li);\n" +
+          "  }\n\n" +
+          "  for (const todo of state.todos) {\n" +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-item";\n\n' +
+          '    const checkbox = document.createElement("input");\n' +
+          '    checkbox.type = "checkbox";\n' +
+          '    checkbox.className = "todo-toggle";\n' +
+          '    checkbox.dataset.id = String(todo.id);\n' +
+          "    checkbox.checked = todo.done;\n" +
+          "    li.appendChild(checkbox);\n\n" +
+          '    const label = document.createElement("span");\n' +
+          "    label.textContent = todo.title;\n" +
+          "    li.appendChild(label);\n\n" +
+          "    list.appendChild(li);\n" +
+          "  }\n" +
+          "}\n\n" +
+          "render();\n\n" +
+          "// TODO: delegate change events from #todo-list to handle checkbox toggles.\n" +
+          '// document.getElementById("todo-list").addEventListener("change", (event) => {\n' +
+          '//   if (!event.target.classList.contains("todo-toggle")) return;\n' +
+          "//   1) read event.target.dataset.id, find the matching todo, remember its\n" +
+          "//      current done value\n" +
+          "//   2) flip ONLY that todo's done in state.todos, render() immediately\n" +
+          '//   3) PUT `/api/todos/${id}` with { done: <new value> }\n' +
+          "//   4) on success: replace that todo with the server's returned todo, render()\n" +
+          "//   5) on failure: restore ONLY that todo's remembered done value,\n" +
+          '//      set state.status = "error", render()\n' +
+          "// });\n" +
+          'document.getElementById("todo-list").addEventListener("change", (event) => {\n' +
+          "});\n",
+      },
+      hints: [
+        "Remember the pre-toggle `done` value BEFORE you mutate `state.todos`, e.g. " +
+          "`const previousDone = todo.done;` — you can't recover it afterward once " +
+          "you've already flipped it locally.",
+        "Use `.map()` to produce a new todos array with only the matching id changed: " +
+          "`state.todos.map((t) => (t.id === id ? { ...t, done: newDone } : t));` — " +
+          "every other todo passes through unchanged.",
+        "The PUT URL is a template literal with the id interpolated: " +
+          "`` `/api/todos/${id}` `` — not the literal string `/api/todos/:id`.",
+        "On failure, roll back using the SAME `.map()` shape, restoring `previousDone` " +
+          "only for the matching id — do not `.filter()` the item out, it still exists, " +
+          "it just failed to save.",
+      ],
+      hiddenTests: [
+        {
+          filename: "toggle-put.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("renders a todo-toggle checkbox per todo with a data-id", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/todo-toggle/.test(js)).toBe(true);\n" +
+            "  expect(/dataset\\.id/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("PUTs to /api/todos/${id} with a JSON done body", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            '  expect(/method\\s*:\\s*["\']PUT["\']/.test(js)).toBe(true);\n' +
+            "  expect(/\\/api\\/todos\\/\\$\\{/.test(js)).toBe(true);\n" +
+            "  expect(/JSON\\.stringify\\(\\s*\\{\\s*done/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("optimistically flips only the matching todo via map", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/\\.map\\(/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("rolls back to an error state on PUT failure", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            '  expect(/status\\s*:\\s*["\']error["\']/.test(js)).toBe(true);\n' +
+            "});\n\n" +
+            'test("simulated toggle: failed PUT restores only the toggled todo\'s done value", async () => {\n' +
+            "  // Evaluate app.js in an isolated Function scope with a stubbed DOM and a\n" +
+            "  // mocked fetch that always rejects the PUT, so the rollback path runs\n" +
+            "  // deterministically without a real server (a mocked fetch stands in for\n" +
+            "  // /api/todos, exactly like day3.ts's own doc comment describes).\n" +
+            '  const appSource = await Bun.file("app.js").text();\n\n' +
+            "  const listeners: Record<string, (event: any) => void> = {};\n" +
+            "  const fakeList = {\n" +
+            '    innerHTML: "",\n' +
+            "    appendChild() {},\n" +
+            "    addEventListener(type: string, handler: (event: any) => void) {\n" +
+            "      listeners[type] = handler;\n" +
+            "    },\n" +
+            "  };\n\n" +
+            "  (globalThis as any).document = {\n" +
+            '    getElementById: (elId: string) => (elId === "todo-list" ? fakeList : { appendChild() {}, addEventListener() {} }),\n' +
+            "    createElement: () => ({\n" +
+            "      classList: { contains: () => false },\n" +
+            "      appendChild() {},\n" +
+            "      dataset: {},\n" +
+            "    }),\n" +
+            "  };\n\n" +
+            "  (globalThis as any).fetch = () =>\n" +
+            '    Promise.resolve({ ok: false, json: async () => ({}) });\n\n' +
+            "  const exposed =\n" +
+            "    appSource +\n" +
+            '    "\\nreturn { getState: () => state };";\n' +
+            '  const factory = new Function("document", "fetch", exposed);\n' +
+            "  const { getState } = factory(\n" +
+            "    (globalThis as any).document,\n" +
+            "    (globalThis as any).fetch,\n" +
+            "  );\n\n" +
+            "  const before = getState().todos.find((t: any) => t.id === 2);\n" +
+            "  expect(before.done).toBe(true);\n\n" +
+            '  listeners["change"]({\n' +
+            "    target: {\n" +
+            "      classList: { contains: (c: string) => c === \"todo-toggle\" },\n" +
+            '      dataset: { id: "2" },\n' +
+            "      checked: false,\n" +
+            "    },\n" +
+            "  });\n\n" +
+            "  await new Promise((r) => setTimeout(r, 10));\n\n" +
+            "  const afterOther = getState().todos.find((t: any) => t.id === 1);\n" +
+            "  const afterToggled = getState().todos.find((t: any) => t.id === 2);\n" +
+            "  expect(afterOther.done).toBe(false); // untouched\n" +
+            "  expect(afterToggled.done).toBe(true); // rolled back to its original value\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "index.html":
+          "<!doctype html>\n" +
+          '<html lang="en">\n' +
+          "  <head>\n" +
+          '    <meta charset="utf-8" />\n' +
+          "    <title>My To-Do List</title>\n" +
+          '    <link rel="stylesheet" href="style.css" />\n' +
+          "  </head>\n" +
+          "  <body>\n" +
+          "    <h1>My To-Dos</h1>\n\n" +
+          '    <ul id="todo-list"></ul>\n\n' +
+          '    <script src="app.js" defer></script>\n' +
+          "  </body>\n" +
+          "</html>\n",
+        "style.css":
+          "#todo-list {\n" +
+          "  list-style: none;\n" +
+          "  padding: 0;\n" +
+          "}\n\n" +
+          ".todo-item {\n" +
+          "  background-color: rgb(240, 240, 240);\n" +
+          "  padding: 10px;\n" +
+          "}\n\n" +
+          ".todo-status {\n" +
+          "  padding: 10px;\n" +
+          "  font-style: italic;\n" +
+          "  color: rgb(90, 90, 90);\n" +
+          "}\n",
+        "app.js":
+          "let state = {\n" +
+          '  status: "ready",\n' +
+          "  todos: [\n" +
+          '    { id: 1, title: "Buy milk", done: false },\n' +
+          '    { id: 2, title: "Walk the dog", done: true },\n' +
+          "  ],\n" +
+          "  error: null,\n" +
+          "};\n\n" +
+          "function render() {\n" +
+          '  const list = document.getElementById("todo-list");\n' +
+          '  list.innerHTML = "";\n\n' +
+          '  if (state.status === "error") {\n' +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-status";\n' +
+          '    li.textContent = "Failed to load todos.";\n' +
+          "    list.appendChild(li);\n" +
+          "  }\n\n" +
+          "  for (const todo of state.todos) {\n" +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-item";\n\n' +
+          '    const checkbox = document.createElement("input");\n' +
+          '    checkbox.type = "checkbox";\n' +
+          '    checkbox.className = "todo-toggle";\n' +
+          '    checkbox.dataset.id = String(todo.id);\n' +
+          "    checkbox.checked = todo.done;\n" +
+          "    li.appendChild(checkbox);\n\n" +
+          '    const label = document.createElement("span");\n' +
+          "    label.textContent = todo.title;\n" +
+          "    li.appendChild(label);\n\n" +
+          "    list.appendChild(li);\n" +
+          "  }\n" +
+          "}\n\n" +
+          "render();\n\n" +
+          'document.getElementById("todo-list").addEventListener("change", (event) => {\n' +
+          '  if (!event.target.classList.contains("todo-toggle")) return;\n\n' +
+          "  const id = Number(event.target.dataset.id);\n" +
+          "  const todo = state.todos.find((t) => t.id === id);\n" +
+          "  if (!todo) return;\n\n" +
+          "  const previousDone = todo.done;\n" +
+          "  const newDone = !previousDone;\n\n" +
+          "  state = {\n" +
+          "    ...state,\n" +
+          "    todos: state.todos.map((t) => (t.id === id ? { ...t, done: newDone } : t)),\n" +
+          "  };\n" +
+          "  render();\n\n" +
+          '  fetch(`/api/todos/${id}`, {\n' +
+          '    method: "PUT",\n' +
+          '    headers: { "Content-Type": "application/json" },\n' +
+          "    body: JSON.stringify({ done: newDone }),\n" +
+          "  })\n" +
+          "    .then((response) => {\n" +
+          '      if (!response.ok) throw new Error("bad response");\n' +
+          "      return response.json();\n" +
+          "    })\n" +
+          "    .then((updatedTodo) => {\n" +
+          "      state = {\n" +
+          "        ...state,\n" +
+          "        todos: state.todos.map((t) => (t.id === id ? updatedTodo : t)),\n" +
+          "      };\n" +
+          "      render();\n" +
+          "    })\n" +
+          "    .catch(() => {\n" +
+          "      state = {\n" +
+          '        status: "error",\n' +
+          "        todos: state.todos.map((t) => (t.id === id ? { ...t, done: previousDone } : t)),\n" +
+          '        error: "Failed to load todos.",\n' +
+          "      };\n" +
+          "      render();\n" +
+          "    });\n" +
+          "});\n",
+      },
+      evalPrompt:
+        "Confirm the learner remembers the pre-toggle done value before mutating " +
+        "state, uses map() (not filter/splice) for both the optimistic update and the " +
+        "rollback, and that rollback restores only the affected todo's done field.",
+    },
+
+    // ------------------------------------------------------------------
+    // d3-t5 — optimistic DELETE + positional rollback
+    // ------------------------------------------------------------------
+    {
+      id: "d3-t5",
+      title: "Delete a to-do with an optimistic DELETE (and a positional rollback)",
+      description:
+        "## Delete a to-do with an optimistic DELETE (and a positional rollback)\n\n" +
+        "Each `.todo-item` now has a `<button class=\"delete-btn\" data-id=\"...\">" +
+        "\u00d7</button>`. Clicking it should delete the todo through the API: " +
+        "`DELETE /api/todos/:id`, returning `200` (or `204`) on success.\n\n" +
+        "Optimistic delete is the sharpest rollback yet. d3-t2's rollback was " +
+        "\"remove the thing we just added\" (easy: filter it out, it never really " +
+        "existed on the server). This time we're removing something that **already " +
+        "existed** — so if the DELETE fails, rollback means **putting it back, at the " +
+        "same position it was in**, not just anywhere.\n\n" +
+        "In `app.js`'s delete-button handler:\n\n" +
+        "1. Find the todo's index in `state.todos` by id (`Array.prototype.findIndex`). " +
+        "   Remember **both** the todo itself and **its index** — you'll need the exact " +
+        "   position for rollback.\n" +
+        "2. Optimistically remove it from `state.todos` (by index or by filtering the " +
+        "   id out) and `render()` immediately.\n" +
+        '3. `fetch(`/api/todos/${id}`, { method: "DELETE" })`.\n' +
+        "4. **On success:** nothing further to do to `state.todos` — the optimistic " +
+        "   removal was correct. (No `render()` needed here since nothing changed, " +
+        "   but it's harmless to call it again.)\n" +
+        "5. **On failure:** **re-insert** the remembered todo back into `state.todos` " +
+        '   at the remembered index (`state.todos.toSpliced(index, 0, todo)` or ' +
+        "   `[...before, todo, ...after]`), set `state.status = \"error\"`, then " +
+        "   `render()`.\n\n" +
+        "**Notice what just happened:** unlike add (rollback = remove) or toggle " +
+        "(rollback = flip one field back), delete's rollback needs a **position**, not " +
+        "just an id — lose track of the index and a failed delete either vanishes the " +
+        "todo forever (client-side) or resurrects it in the wrong spot in the list.",
+      starterCode: {
+        "index.html":
+          "<!doctype html>\n" +
+          '<html lang="en">\n' +
+          "  <head>\n" +
+          '    <meta charset="utf-8" />\n' +
+          "    <title>My To-Do List</title>\n" +
+          '    <link rel="stylesheet" href="style.css" />\n' +
+          "  </head>\n" +
+          "  <body>\n" +
+          "    <h1>My To-Dos</h1>\n\n" +
+          '    <ul id="todo-list"></ul>\n\n' +
+          '    <script src="app.js" defer></script>\n' +
+          "  </body>\n" +
+          "</html>\n",
+        "style.css":
+          "#todo-list {\n" +
+          "  list-style: none;\n" +
+          "  padding: 0;\n" +
+          "}\n\n" +
+          ".todo-item {\n" +
+          "  background-color: rgb(240, 240, 240);\n" +
+          "  padding: 10px;\n" +
+          "}\n\n" +
+          ".todo-status {\n" +
+          "  padding: 10px;\n" +
+          "  font-style: italic;\n" +
+          "  color: rgb(90, 90, 90);\n" +
+          "}\n",
+        "app.js":
+          "let state = {\n" +
+          '  status: "ready",\n' +
+          "  todos: [\n" +
+          '    { id: 1, title: "Buy milk", done: false },\n' +
+          '    { id: 2, title: "Walk the dog", done: true },\n' +
+          '    { id: 3, title: "Read a book", done: false },\n' +
+          "  ],\n" +
+          "  error: null,\n" +
+          "};\n\n" +
+          "function render() {\n" +
+          '  const list = document.getElementById("todo-list");\n' +
+          '  list.innerHTML = "";\n\n' +
+          '  if (state.status === "error") {\n' +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-status";\n' +
+          '    li.textContent = "Failed to load todos.";\n' +
+          "    list.appendChild(li);\n" +
+          "  }\n\n" +
+          "  for (const todo of state.todos) {\n" +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-item";\n\n' +
+          '    const label = document.createElement("span");\n' +
+          "    label.textContent = todo.title;\n" +
+          "    li.appendChild(label);\n\n" +
+          '    const del = document.createElement("button");\n' +
+          '    del.className = "delete-btn";\n' +
+          '    del.dataset.id = String(todo.id);\n' +
+          '    del.textContent = "\u00d7";\n' +
+          "    li.appendChild(del);\n\n" +
+          "    list.appendChild(li);\n" +
+          "  }\n" +
+          "}\n\n" +
+          "render();\n\n" +
+          "// TODO: delegate click events from #todo-list to handle delete-btn clicks.\n" +
+          '// document.getElementById("todo-list").addEventListener("click", (event) => {\n' +
+          '//   if (!event.target.classList.contains("delete-btn")) return;\n' +
+          "//   1) read event.target.dataset.id, findIndex the matching todo, remember\n" +
+          "//      BOTH the todo and its index\n" +
+          "//   2) optimistically remove it from state.todos, render() immediately\n" +
+          '//   3) DELETE `/api/todos/${id}`\n' +
+          "//   4) on success: nothing further needed\n" +
+          "//   5) on failure: re-insert the remembered todo at the remembered index,\n" +
+          '//      set state.status = "error", render()\n' +
+          "// });\n" +
+          'document.getElementById("todo-list").addEventListener("click", (event) => {\n' +
+          "});\n",
+      },
+      hints: [
+        "`const index = state.todos.findIndex((t) => t.id === id);` and " +
+          "`const todo = state.todos[index];` — capture BOTH before you remove anything, " +
+          "you need the index for rollback, not just the id.",
+        "Optimistic removal: `state.todos.filter((t) => t.id !== id)` is fine for the " +
+          "happy path since order among the *remaining* items doesn't change.",
+        "Rollback re-insertion at a specific index: " +
+          "`[...state.todos.slice(0, index), todo, ...state.todos.slice(index)]` — " +
+          "plain `.push()` would put it back at the end, not its original spot.",
+        "The DELETE call needs no body, just " +
+          '`fetch(`/api/todos/${id}`, { method: "DELETE" })`.',
+      ],
+      hiddenTests: [
+        {
+          filename: "delete-rollback.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("renders a delete-btn button per todo with a data-id", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/delete-btn/.test(js)).toBe(true);\n" +
+            "  expect(/dataset\\.id/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("DELETEs to /api/todos/${id}", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            '  expect(/method\\s*:\\s*["\']DELETE["\']/.test(js)).toBe(true);\n' +
+            "  expect(/\\/api\\/todos\\/\\$\\{/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("remembers the index before optimistic removal", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/findIndex\\(/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("rolls back to an error state on DELETE failure", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            '  expect(/status\\s*:\\s*["\']error["\']/.test(js)).toBe(true);\n' +
+            "});\n\n" +
+            'test("simulated delete: failed DELETE re-inserts the todo at its original position", async () => {\n' +
+            "  // Same isolated-Function-scope technique as d3-t3/d3-t4: mocked fetch\n" +
+            "  // always rejects the DELETE, so the rollback path runs deterministically\n" +
+            "  // with no real server.\n" +
+            '  const appSource = await Bun.file("app.js").text();\n\n' +
+            "  const listeners: Record<string, (event: any) => void> = {};\n" +
+            "  const fakeList = {\n" +
+            '    innerHTML: "",\n' +
+            "    appendChild() {},\n" +
+            "    addEventListener(type: string, handler: (event: any) => void) {\n" +
+            "      listeners[type] = handler;\n" +
+            "    },\n" +
+            "  };\n\n" +
+            "  (globalThis as any).document = {\n" +
+            '    getElementById: (elId: string) => (elId === "todo-list" ? fakeList : { appendChild() {}, addEventListener() {} }),\n' +
+            "    createElement: () => ({\n" +
+            "      classList: { contains: () => false },\n" +
+            "      appendChild() {},\n" +
+            "      dataset: {},\n" +
+            "    }),\n" +
+            "  };\n\n" +
+            "  (globalThis as any).fetch = () =>\n" +
+            '    Promise.resolve({ ok: false, json: async () => ({}) });\n\n' +
+            "  const exposed =\n" +
+            "    appSource +\n" +
+            '    "\\nreturn { getState: () => state };";\n' +
+            '  const factory = new Function("document", "fetch", exposed);\n' +
+            "  const { getState } = factory(\n" +
+            "    (globalThis as any).document,\n" +
+            "    (globalThis as any).fetch,\n" +
+            "  );\n\n" +
+            "  expect(getState().todos.map((t: any) => t.id)).toEqual([1, 2, 3]);\n\n" +
+            '  listeners["click"]({\n' +
+            "    target: {\n" +
+            "      classList: { contains: (c: string) => c === \"delete-btn\" },\n" +
+            '      dataset: { id: "2" },\n' +
+            "    },\n" +
+            "  });\n\n" +
+            "  await new Promise((r) => setTimeout(r, 10));\n\n" +
+            "  const ids = getState().todos.map((t: any) => t.id);\n" +
+            "  expect(ids).toEqual([1, 2, 3]); // id 2 restored at its original index (1)\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "index.html":
+          "<!doctype html>\n" +
+          '<html lang="en">\n' +
+          "  <head>\n" +
+          '    <meta charset="utf-8" />\n' +
+          "    <title>My To-Do List</title>\n" +
+          '    <link rel="stylesheet" href="style.css" />\n' +
+          "  </head>\n" +
+          "  <body>\n" +
+          "    <h1>My To-Dos</h1>\n\n" +
+          '    <ul id="todo-list"></ul>\n\n' +
+          '    <script src="app.js" defer></script>\n' +
+          "  </body>\n" +
+          "</html>\n",
+        "style.css":
+          "#todo-list {\n" +
+          "  list-style: none;\n" +
+          "  padding: 0;\n" +
+          "}\n\n" +
+          ".todo-item {\n" +
+          "  background-color: rgb(240, 240, 240);\n" +
+          "  padding: 10px;\n" +
+          "}\n\n" +
+          ".todo-status {\n" +
+          "  padding: 10px;\n" +
+          "  font-style: italic;\n" +
+          "  color: rgb(90, 90, 90);\n" +
+          "}\n",
+        "app.js":
+          "let state = {\n" +
+          '  status: "ready",\n' +
+          "  todos: [\n" +
+          '    { id: 1, title: "Buy milk", done: false },\n' +
+          '    { id: 2, title: "Walk the dog", done: true },\n' +
+          '    { id: 3, title: "Read a book", done: false },\n' +
+          "  ],\n" +
+          "  error: null,\n" +
+          "};\n\n" +
+          "function render() {\n" +
+          '  const list = document.getElementById("todo-list");\n' +
+          '  list.innerHTML = "";\n\n' +
+          '  if (state.status === "error") {\n' +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-status";\n' +
+          '    li.textContent = "Failed to load todos.";\n' +
+          "    list.appendChild(li);\n" +
+          "  }\n\n" +
+          "  for (const todo of state.todos) {\n" +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-item";\n\n' +
+          '    const label = document.createElement("span");\n' +
+          "    label.textContent = todo.title;\n" +
+          "    li.appendChild(label);\n\n" +
+          '    const del = document.createElement("button");\n' +
+          '    del.className = "delete-btn";\n' +
+          '    del.dataset.id = String(todo.id);\n' +
+          '    del.textContent = "\u00d7";\n' +
+          "    li.appendChild(del);\n\n" +
+          "    list.appendChild(li);\n" +
+          "  }\n" +
+          "}\n\n" +
+          "render();\n\n" +
+          'document.getElementById("todo-list").addEventListener("click", (event) => {\n' +
+          '  if (!event.target.classList.contains("delete-btn")) return;\n\n' +
+          "  const id = Number(event.target.dataset.id);\n" +
+          "  const index = state.todos.findIndex((t) => t.id === id);\n" +
+          "  if (index === -1) return;\n" +
+          "  const todo = state.todos[index];\n\n" +
+          "  state = { ...state, todos: state.todos.filter((t) => t.id !== id) };\n" +
+          "  render();\n\n" +
+          '  fetch(`/api/todos/${id}`, { method: "DELETE" })\n' +
+          "    .then((response) => {\n" +
+          '      if (!response.ok) throw new Error("bad response");\n' +
+          "    })\n" +
+          "    .catch(() => {\n" +
+          "      state = {\n" +
+          '        status: "error",\n' +
+          "        todos: [\n" +
+          "          ...state.todos.slice(0, index),\n" +
+          "          todo,\n" +
+          "          ...state.todos.slice(index),\n" +
+          "        ],\n" +
+          '        error: "Failed to load todos.",\n' +
+          "      };\n" +
+          "      render();\n" +
+          "    });\n" +
+          "});\n",
+      },
+      evalPrompt:
+        "Confirm the learner captures BOTH the todo and its index before the optimistic " +
+        "removal, and that a failed DELETE re-inserts the todo at its original index " +
+        "(not just appended anywhere) via slice/splice, not push.",
+    },
+
+    // ------------------------------------------------------------------
+    // d3-t6 — double-submit guard (isSubmitting bookkeeping on every path)
+    // ------------------------------------------------------------------
+    {
+      id: "d3-t6",
+      title: "Prevent double-submit with a hand-rolled isSubmitting flag",
+      description:
+        "## Prevent double-submit with a hand-rolled isSubmitting flag\n\n" +
+        "The starter has d3-t2's optimistic-POST add form, but nothing stops a fast " +
+        "clicker from submitting **twice** before the first POST resolves — firing two " +
+        "optimistic todos and two POST requests for what the user thought was one " +
+        "click.\n\n" +
+        "The fix: a plain boolean, `state.isSubmitting`, that disables the submit " +
+        "button while a request is in flight. This sounds trivial — until you realize " +
+        "it must be set back to `false` on **every single exit path**, including the " +
+        "ones that only happen on network failure.\n\n" +
+        "In `app.js`'s submit handler:\n\n" +
+        "1. At the very top, **bail out early** if `state.isSubmitting` is already " +
+        "   `true` (a guard against a click that slipped through before the button's " +
+        "   `disabled` attribute visually updated).\n" +
+        "2. Immediately set `state.isSubmitting = true` and `render()` (this is what " +
+        "   disables the submit button — `render()` must set the button's `disabled` " +
+        "   property from `state.isSubmitting`).\n" +
+        "3. Do the optimistic push + POST, exactly like d3-t2.\n" +
+        "4. **On success:** reconcile the todo (like d3-t2) AND set " +
+        "   `state.isSubmitting = false`, then `render()`.\n" +
+        "5. **On failure:** roll back the todo (like d3-t2) AND **also** set " +
+        "   `state.isSubmitting = false`, then `render()`.\n\n" +
+        "**Notice what just happened:** step 5 is the trap. It's easy to remember to " +
+        "reset `isSubmitting` in the success branch (you're already there editing that " +
+        "code) and forget the failure branch entirely — and the bug is invisible until " +
+        "someone's request fails, at which point the Add button is disabled **forever**, " +
+        "with no error and no way to recover except reloading the page. Every new flag " +
+        "you hand-roll (status, isSubmitting, requestId, ...) is one more thing that " +
+        "must be correctly reset on every possible code path, forever, by a human.",
+      starterCode: {
+        "index.html":
+          "<!doctype html>\n" +
+          '<html lang="en">\n' +
+          "  <head>\n" +
+          '    <meta charset="utf-8" />\n' +
+          "    <title>My To-Do List</title>\n" +
+          '    <link rel="stylesheet" href="style.css" />\n' +
+          "  </head>\n" +
+          "  <body>\n" +
+          "    <h1>My To-Dos</h1>\n\n" +
+          '    <form id="todo-form">\n' +
+          '      <input id="todo-input" type="text" placeholder="New to-do" />\n' +
+          '      <button id="add-btn" type="submit">Add</button>\n' +
+          "    </form>\n\n" +
+          '    <ul id="todo-list"></ul>\n\n' +
+          '    <script src="app.js" defer></script>\n' +
+          "  </body>\n" +
+          "</html>\n",
+        "style.css":
+          "#todo-list {\n" +
+          "  list-style: none;\n" +
+          "  padding: 0;\n" +
+          "}\n\n" +
+          ".todo-item {\n" +
+          "  background-color: rgb(240, 240, 240);\n" +
+          "  padding: 10px;\n" +
+          "}\n\n" +
+          ".todo-status {\n" +
+          "  padding: 10px;\n" +
+          "  font-style: italic;\n" +
+          "  color: rgb(90, 90, 90);\n" +
+          "}\n",
+        "app.js":
+          "let state = {\n" +
+          '  status: "ready",\n' +
+          "  todos: [],\n" +
+          "  error: null,\n" +
+          "  isSubmitting: false,\n" +
+          "};\n\n" +
+          "function render() {\n" +
+          '  const list = document.getElementById("todo-list");\n' +
+          '  list.innerHTML = "";\n\n' +
+          "  // TODO: set the add button's disabled property from state.isSubmitting\n" +
+          '  // document.getElementById("add-btn").disabled = state.isSubmitting;\n\n' +
+          '  if (state.status === "error") {\n' +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-status";\n' +
+          '    li.textContent = "Failed to load todos.";\n' +
+          "    list.appendChild(li);\n" +
+          "  }\n\n" +
+          "  for (const todo of state.todos) {\n" +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-item";\n' +
+          "    li.textContent = todo.title;\n" +
+          "    list.appendChild(li);\n" +
+          "  }\n" +
+          "}\n\n" +
+          "render();\n\n" +
+          'const form = document.getElementById("todo-form");\n' +
+          'const input = document.getElementById("todo-input");\n\n' +
+          'form.addEventListener("submit", (event) => {\n' +
+          "  event.preventDefault();\n" +
+          "  const value = input.value.trim();\n" +
+          "  if (!value) return;\n\n" +
+          "  // TODO:\n" +
+          "  // 1) bail out early if state.isSubmitting is already true\n" +
+          "  // 2) set state.isSubmitting = true, render()\n" +
+          '  // 3) push an optimistic todo with a temp id (like d3-t2), clear input.value, render()\n' +
+          "  // 4) POST /api/todos with { title: value }\n" +
+          "  // 5) on success: reconcile the todo AND set state.isSubmitting = false, render()\n" +
+          "  // 6) on failure: roll back the todo AND set state.isSubmitting = false, render()\n" +
+          "});\n",
+      },
+      hints: [
+        "The early-bail guard is one line at the very top of the handler, before doing " +
+          "anything else: `if (state.isSubmitting) return;`.",
+        "`render()` must read `state.isSubmitting` to set the button's `disabled` " +
+          'property — `document.getElementById("add-btn").disabled = state.isSubmitting;` — ' +
+          "otherwise the guard exists in state but the button never visually disables.",
+        "Both the `.then()` success branch AND the `.catch()` failure branch need their " +
+          "own `state = { ...state, isSubmitting: false, ... }` — copy-pasting only the " +
+          "success branch's reset is the exact bug this task is about.",
+        "Structure it so resetting isSubmitting is impossible to forget, e.g. compute the " +
+          "next state object in one place per branch that always includes " +
+          "`isSubmitting: false` alongside whatever else that branch changes.",
+      ],
+      hiddenTests: [
+        {
+          filename: "double-submit-guard.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("declares an isSubmitting flag on state, defaulting to false", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/isSubmitting\\s*:\\s*false/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("guards against a submit while already submitting", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/if\\s*\\(\\s*state\\.isSubmitting\\s*\\)/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("render() disables the add button from state.isSubmitting", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  expect(/\\.disabled\\s*=\\s*state\\.isSubmitting/.test(js)).toBe(true);\n" +
+            "});\n\n" +
+            'test("resets isSubmitting to false in BOTH the success and failure branches", async () => {\n' +
+            '  const js = await Bun.file("app.js").text();\n' +
+            "  const resets = js.match(/isSubmitting\\s*:\\s*false/g) ?? [];\n" +
+            "  // one for the initial state literal, at least two more for the two\n" +
+            "  // settle branches (success + failure) resetting it back to false\n" +
+            "  expect(resets.length).toBeGreaterThanOrEqual(3);\n" +
+            "});\n\n" +
+            'test("simulated double-submit: a failed POST still resets isSubmitting to false", async () => {\n' +
+            "  // Same isolated-Function-scope technique as the other d3 race/rollback\n" +
+            "  // tests: a mocked fetch that always rejects the POST, so we can confirm\n" +
+            "  // the failure path resets isSubmitting without a real server.\n" +
+            '  const appSource = await Bun.file("app.js").text();\n\n' +
+            "  const listeners: Record<string, (event: any) => void> = {};\n" +
+            "  const fakeButton = { disabled: false };\n" +
+            "  const fakeInput = { value: \"buy milk\" };\n" +
+            "  const fakeList = {\n" +
+            '    innerHTML: "",\n' +
+            "    appendChild() {},\n" +
+            "  };\n" +
+            "  const fakeForm = {\n" +
+            "    addEventListener(type: string, handler: (event: any) => void) {\n" +
+            "      listeners[type] = handler;\n" +
+            "    },\n" +
+            "  };\n\n" +
+            "  (globalThis as any).document = {\n" +
+            "    getElementById: (elId: string) => {\n" +
+            '      if (elId === "todo-list") return fakeList;\n' +
+            '      if (elId === "add-btn") return fakeButton;\n' +
+            '      if (elId === "todo-form") return fakeForm;\n' +
+            '      if (elId === "todo-input") return fakeInput;\n' +
+            "      return { appendChild() {}, addEventListener() {} };\n" +
+            "    },\n" +
+            "    createElement: () => ({ appendChild() {} }),\n" +
+            "  };\n\n" +
+            "  (globalThis as any).fetch = () =>\n" +
+            '    Promise.resolve({ ok: false, json: async () => ({}) });\n\n' +
+            "  const exposed =\n" +
+            "    appSource +\n" +
+            '    "\\nreturn { getState: () => state };";\n' +
+            '  const factory = new Function("document", "fetch", exposed);\n' +
+            "  const { getState } = factory(\n" +
+            "    (globalThis as any).document,\n" +
+            "    (globalThis as any).fetch,\n" +
+            "  );\n\n" +
+            "  expect(getState().isSubmitting).toBe(false);\n\n" +
+            '  listeners["submit"]({ preventDefault() {} });\n\n' +
+            "  expect(getState().isSubmitting).toBe(true); // disabled immediately\n\n" +
+            "  await new Promise((r) => setTimeout(r, 10));\n\n" +
+            "  expect(getState().isSubmitting).toBe(false); // reset even though the POST failed\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "index.html":
+          "<!doctype html>\n" +
+          '<html lang="en">\n' +
+          "  <head>\n" +
+          '    <meta charset="utf-8" />\n' +
+          "    <title>My To-Do List</title>\n" +
+          '    <link rel="stylesheet" href="style.css" />\n' +
+          "  </head>\n" +
+          "  <body>\n" +
+          "    <h1>My To-Dos</h1>\n\n" +
+          '    <form id="todo-form">\n' +
+          '      <input id="todo-input" type="text" placeholder="New to-do" />\n' +
+          '      <button id="add-btn" type="submit">Add</button>\n' +
+          "    </form>\n\n" +
+          '    <ul id="todo-list"></ul>\n\n' +
+          '    <script src="app.js" defer></script>\n' +
+          "  </body>\n" +
+          "</html>\n",
+        "style.css":
+          "#todo-list {\n" +
+          "  list-style: none;\n" +
+          "  padding: 0;\n" +
+          "}\n\n" +
+          ".todo-item {\n" +
+          "  background-color: rgb(240, 240, 240);\n" +
+          "  padding: 10px;\n" +
+          "}\n\n" +
+          ".todo-status {\n" +
+          "  padding: 10px;\n" +
+          "  font-style: italic;\n" +
+          "  color: rgb(90, 90, 90);\n" +
+          "}\n",
+        "app.js":
+          "let state = {\n" +
+          '  status: "ready",\n' +
+          "  todos: [],\n" +
+          "  error: null,\n" +
+          "  isSubmitting: false,\n" +
+          "};\n\n" +
+          "function render() {\n" +
+          '  const list = document.getElementById("todo-list");\n' +
+          '  list.innerHTML = "";\n\n' +
+          '  document.getElementById("add-btn").disabled = state.isSubmitting;\n\n' +
+          '  if (state.status === "error") {\n' +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-status";\n' +
+          '    li.textContent = "Failed to load todos.";\n' +
+          "    list.appendChild(li);\n" +
+          "  }\n\n" +
+          "  for (const todo of state.todos) {\n" +
+          '    const li = document.createElement("li");\n' +
+          '    li.className = "todo-item";\n' +
+          "    li.textContent = todo.title;\n" +
+          "    list.appendChild(li);\n" +
+          "  }\n" +
+          "}\n\n" +
+          "render();\n\n" +
+          'const form = document.getElementById("todo-form");\n' +
+          'const input = document.getElementById("todo-input");\n\n' +
+          'form.addEventListener("submit", (event) => {\n' +
+          "  event.preventDefault();\n" +
+          "  if (state.isSubmitting) return;\n\n" +
+          "  const value = input.value.trim();\n" +
+          "  if (!value) return;\n\n" +
+          '  const tempId = "temp-" + Date.now();\n' +
+          "  state = {\n" +
+          "    ...state,\n" +
+          "    isSubmitting: true,\n" +
+          "    todos: [...state.todos, { id: tempId, title: value, done: false }],\n" +
+          "  };\n" +
+          '  input.value = "";\n' +
+          "  render();\n\n" +
+          '  fetch("/api/todos", {\n' +
+          '    method: "POST",\n' +
+          '    headers: { "Content-Type": "application/json" },\n' +
+          "    body: JSON.stringify({ title: value }),\n" +
+          "  })\n" +
+          "    .then((response) => {\n" +
+          '      if (!response.ok) throw new Error("bad response");\n' +
+          "      return response.json();\n" +
+          "    })\n" +
+          "    .then((realTodo) => {\n" +
+          "      state = {\n" +
+          "        ...state,\n" +
+          "        isSubmitting: false,\n" +
+          "        todos: state.todos.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "      };\n" +
+          "      render();\n" +
+          "    })\n" +
+          "    .catch(() => {\n" +
+          "      state = {\n" +
+          '        status: "error",\n' +
+          "        isSubmitting: false,\n" +
+          "        todos: state.todos.filter((t) => t.id !== tempId),\n" +
+          '        error: "Failed to load todos.",\n' +
+          "      };\n" +
+          "      render();\n" +
+          "    });\n" +
+          "});\n",
+      },
+      evalPrompt:
+        "Confirm isSubmitting is set to true synchronously before the POST, guarded " +
+        "against re-entry at the top of the handler, and reset to false in BOTH the " +
+        "success and failure branches (not only the success branch).",
     },
   ],
 };

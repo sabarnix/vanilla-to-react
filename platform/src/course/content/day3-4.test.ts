@@ -135,8 +135,8 @@ describe("Day 3 + Day 4 — schema validity (in context of all four days)", () =
 });
 
 describe("Day 3 — task count and titles", () => {
-  test("day3 has 3 tasks", () => {
-    expect(day3.tasks.length).toBe(3);
+  test("day3 has 6 tasks", () => {
+    expect(day3.tasks.length).toBe(6);
   });
 
   test("day3 task titles", () => {
@@ -144,13 +144,27 @@ describe("Day 3 — task count and titles", () => {
       "Fetch todos from the API (and hand-roll loading/error state)",
       "Add a to-do with an optimistic POST (and a manual rollback)",
       "Fix the reload race condition (stale responses winning)",
+      "Toggle done with an optimistic PUT (and a per-item rollback)",
+      "Delete a to-do with an optimistic DELETE (and a positional rollback)",
+      "Prevent double-submit with a hand-rolled isSubmitting flag",
+    ]);
+  });
+
+  test("day3 task ids are d3-t1..d3-t6, in order", () => {
+    expect(day3.tasks.map((t) => t.id)).toEqual([
+      "d3-t1",
+      "d3-t2",
+      "d3-t3",
+      "d3-t4",
+      "d3-t5",
+      "d3-t6",
     ]);
   });
 });
 
 describe("Day 4 — task count and titles", () => {
-  test("day4 has 3 tasks", () => {
-    expect(day4.tasks.length).toBe(3);
+  test("day4 has 6 tasks", () => {
+    expect(day4.tasks.length).toBe(6);
   });
 
   test("day4 task titles", () => {
@@ -158,6 +172,20 @@ describe("Day 4 — task count and titles", () => {
       "Rebuild the loading/error/ready states with useState + JSX",
       "Fetch on mount with useEffect",
       "Add a to-do with setTodos (no manual reconciliation)",
+      "Toggle done with setTodos (React mirror of d3-t4's PUT)",
+      "Delete a to-do with setTodos (React mirror of d3-t5's DELETE)",
+      "Guard double-submit with isSubmitting useState (React mirror of d3-t6)",
+    ]);
+  });
+
+  test("day4 task ids are d4-t1..d4-t6, in order", () => {
+    expect(day4.tasks.map((t) => t.id)).toEqual([
+      "d4-t1",
+      "d4-t2",
+      "d4-t3",
+      "d4-t4",
+      "d4-t5",
+      "d4-t6",
     ]);
   });
 });

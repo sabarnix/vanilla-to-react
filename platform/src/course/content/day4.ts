@@ -36,6 +36,32 @@
  *           a single render pass (Day 6 covers cancelling in-flight
  *           requests with `useEffect` cleanup for the *fetch itself*, but
  *           the DOM-sync class of bug from d3-t3 is gone here for free).
+ *   d4-t4 — the React mirror of d3-t4's PUT toggle: `setTodos((current) =>
+ *           current.map(...))` replaces one item, immutably, in one
+ *           expression — no separately-remembered "previous done value"
+ *           variable needed for rollback, because the rollback branch can
+ *           just build its own corrected array from the *current* state at
+ *           the time it runs, the same way the optimistic branch did.
+ *   d4-t5 — the React mirror of d3-t5's DELETE: `setTodos((current) =>
+ *           current.filter(...))` removes one item; rollback on failure is
+ *           `setTodos((current) => [...current, todo])` — no hand-tracked
+ *           array index required, because React re-renders the *whole*
+ *           list from whatever `todos` holds at each update; ordering is a
+ *           display concern (d4-t5 keeps it simple by appending on
+ *           rollback, trading exact position for zero bookkeeping — the
+ *           point the task makes explicit).
+ *   d4-t6 — the React mirror of d3-t6's double-submit guard: a single
+ *           `isSubmitting` `useState`, set in the submit handler and reset
+ *           in *both* `.then()`/`.catch()` — same shape as d3-t6, but
+ *           notice what's still true here versus what changed: React does
+ *           NOT save you from forgetting the failure-path reset (that's
+ *           still on the learner, same discipline as d3-t6), but it DOES
+ *           guarantee that whichever branch runs, the very next render
+ *           reflects the new `isSubmitting` value — there's no separate
+ *           `render()` call to remember, so half of d3-t6's failure mode
+ *           (state changes, but the DOM never reflects it) is categorically
+ *           impossible in React; only the "forgot to reset the flag itself"
+ *           half of the bug remains a real risk.
  *
  * React runs via Burrow's bun+esm toolchain per SPEC.md §1 (the learner's
  * sandbox `npm install`s react/react-dom, as declared in each task's
@@ -744,6 +770,935 @@ export const day4: Day = {
         "resolves, uses functional setTodos updaters (not a stale closed-over todos " +
         "variable), and that reconcileTodos/rollbackTodos are pure (return new arrays, " +
         "never mutate their input).",
+    },
+
+    // ------------------------------------------------------------------
+    // d4-t4 — toggle done via setTodos, no per-item rollback bookkeeping
+    // ------------------------------------------------------------------
+    {
+      id: "d4-t4",
+      title: "Toggle done with setTodos (React mirror of d3-t4's PUT)",
+      description:
+        "## Toggle done with setTodos (React mirror of d3-t4's PUT)\n\n" +
+        "Recall d3-t4: toggling a to-do's `done` meant hand-remembering the todo's " +
+        "*previous* `done` value in a loose variable **before** mutating `state.todos`, " +
+        "so a failed `PUT` could restore exactly that one field on exactly that one " +
+        "item. Forget to capture it before mutating, and rollback is impossible.\n\n" +
+        "In React, `setTodos` always hands your updater function the **current** " +
+        "array — so the rollback branch doesn't need a variable captured from before " +
+        "the optimistic update. It can just build the corrected array from whatever " +
+        "`todos` holds *at rollback time*, the same way the optimistic branch built its " +
+        "array from whatever `todos` held *at toggle time*:\n\n" +
+        "```jsx\n" +
+        "function handleToggle(id, nextDone) {\n" +
+        "  setTodos((current) =>\n" +
+        "    current.map((t) => (t.id === id ? { ...t, done: nextDone } : t)),\n" +
+        "  );\n\n" +
+        '  fetch(`/api/todos/${id}`, {\n' +
+        '    method: "PUT",\n' +
+        '    headers: { "Content-Type": "application/json" },\n' +
+        "    body: JSON.stringify({ done: nextDone }),\n" +
+        "  })\n" +
+        "    .then((response) => {\n" +
+        '      if (!response.ok) throw new Error("bad response");\n' +
+        "      return response.json();\n" +
+        "    })\n" +
+        "    .then((updatedTodo) => {\n" +
+        "      setTodos((current) =>\n" +
+        "        current.map((t) => (t.id === id ? updatedTodo : t)),\n" +
+        "      );\n" +
+        "    })\n" +
+        "    .catch(() => {\n" +
+        "      setTodos((current) =>\n" +
+        "        current.map((t) => (t.id === id ? { ...t, done: !nextDone } : t)),\n" +
+        "      );\n" +
+        '      setStatus("error");\n' +
+        "    });\n" +
+        "}\n" +
+        "```\n\n" +
+        "Notice the rollback branch simply flips `done` back to `!nextDone` inline — no " +
+        "separately-threaded \"previousDone\" variable survives from before the " +
+        "optimistic update, because it doesn't need to.\n\n" +
+        "**Your job:** wire `handleToggle` and a `.todo-toggle` checkbox per todo into " +
+        "`App.jsx`, AND implement the pure helper `toggleTodo(todos, id, nextDone)` in " +
+        "`view.js` — returns a **new** array with only the matching todo's `done` set " +
+        "to `nextDone` (same shape as the `.map` above; must not mutate the input).",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day4-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  // TODO: handleToggle(id, nextDone) — optimistic setTodos update, PUT\n" +
+          "  // /api/todos/${id}, reconcile with the server's todo on success, flip\n" +
+          "  // done back on failure (inline — no previousDone variable needed).\n" +
+          "  function handleToggle(id, nextDone) {\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading\u2026</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          '        <li key={todo.id} className="todo-item">\n' +
+          "          <input\n" +
+          '            type="checkbox"\n' +
+          '            className="todo-toggle"\n' +
+          "            checked={todo.done}\n" +
+          "            onChange={(event) => handleToggle(todo.id, event.target.checked)}\n" +
+          "          />\n" +
+          "          {todo.title}\n" +
+          "        </li>\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function pickView(status) {\n" +
+          '  if (status === "loading") return "loading";\n' +
+          '  if (status === "error") return "error";\n' +
+          '  return "ready";\n' +
+          "}\n\n" +
+          "export function classifyTodosResponse(ok) {\n" +
+          '  return ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function reconcileTodos(todos, tempId, realTodo) {\n" +
+          "  return todos.map((t) => (t.id === tempId ? realTodo : t));\n" +
+          "}\n\n" +
+          "export function rollbackTodos(todos, tempId) {\n" +
+          "  return todos.filter((t) => t.id !== tempId);\n" +
+          "}\n\n" +
+          "// TODO: implement toggleTodo(todos, id, nextDone) -> new array\n" +
+          "export function toggleTodo(todos, id, nextDone) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`toggleTodo` is a one-line `.map()`: " +
+          "`return todos.map((t) => (t.id === id ? { ...t, done: nextDone } : t));` — " +
+          "every other todo passes through unchanged.",
+        "handleToggle's optimistic call and its rollback call can both use `toggleTodo`-" +
+          "shaped logic directly inside `setTodos((current) => ...)` — the rollback just " +
+          "passes `!nextDone` as the value instead of `nextDone`.",
+        "Because `setTodos`'s updater always receives the CURRENT array when it runs, " +
+          "you never need a variable holding the todo's value from before the toggle — " +
+          "unlike d3-t4's `previousDone`.",
+        "The PUT call is identical in shape to d3-t4's: " +
+          '`fetch(`/api/todos/${id}`, { method: "PUT", headers: { "Content-Type": ' +
+          '"application/json" }, body: JSON.stringify({ done: nextDone }) })`.',
+      ],
+      hiddenTests: [
+        {
+          filename: "toggle-todo.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { toggleTodo } from "./view.js";\n\n' +
+            'test("toggleTodo flips only the matching todo\'s done", () => {\n' +
+            "  const todos = [\n" +
+            '    { id: 1, title: "Buy milk", done: false },\n' +
+            '    { id: 2, title: "Walk the dog", done: true },\n' +
+            "  ];\n" +
+            "  const result = toggleTodo(todos, 1, true);\n" +
+            "  expect(result).toEqual([\n" +
+            '    { id: 1, title: "Buy milk", done: true },\n' +
+            '    { id: 2, title: "Walk the dog", done: true },\n' +
+            "  ]);\n" +
+            "});\n\n" +
+            'test("toggleTodo does not mutate the original array", () => {\n' +
+            '  const todos = [{ id: 1, title: "Buy milk", done: false }];\n' +
+            "  const original = [...todos];\n" +
+            "  toggleTodo(todos, 1, true);\n" +
+            "  expect(todos).toEqual(original);\n" +
+            "});\n\n" +
+            'test("toggleTodo leaves the array untouched if the id is not found", () => {\n' +
+            '  const todos = [{ id: 2, title: "Existing", done: false }];\n' +
+            "  const result = toggleTodo(todos, 999, true);\n" +
+            "  expect(result).toEqual(todos);\n" +
+            "});\n",
+        },
+        {
+          filename: "toggle-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx renders a todo-toggle checkbox bound to todo.done", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/todo-toggle/.test(jsx)).toBe(true);\n" +
+            "  expect(/checked=\\{todo\\.done\\}/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("handleToggle PUTs to /api/todos/${id} with a JSON done body", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/function handleToggle/.test(jsx)).toBe(true);\n" +
+            '  expect(/method\\s*:\\s*["\']PUT["\']/.test(jsx)).toBe(true);\n' +
+            "  expect(/\\/api\\/todos\\/\\$\\{/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("handleToggle uses setTodos (not manual DOM writes) for both branches", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const calls = jsx.match(/setTodos\\(/g) ?? [];\n" +
+            "  expect(calls.length).toBeGreaterThanOrEqual(2);\n" +
+            "  expect(/document\\.createElement/.test(jsx)).toBe(false);\n" +
+            "  expect(/innerHTML/.test(jsx)).toBe(false);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day4-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleToggle(id, nextDone) {\n" +
+          "    setTodos((current) =>\n" +
+          "      current.map((t) => (t.id === id ? { ...t, done: nextDone } : t)),\n" +
+          "    );\n\n" +
+          '    fetch(`/api/todos/${id}`, {\n' +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: nextDone }),\n" +
+          "    })\n" +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((updatedTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === id ? updatedTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === id ? { ...t, done: !nextDone } : t)),\n" +
+          "        );\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading\u2026</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          '        <li key={todo.id} className="todo-item">\n' +
+          "          <input\n" +
+          '            type="checkbox"\n' +
+          '            className="todo-toggle"\n' +
+          "            checked={todo.done}\n" +
+          "            onChange={(event) => handleToggle(todo.id, event.target.checked)}\n" +
+          "          />\n" +
+          "          {todo.title}\n" +
+          "        </li>\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function pickView(status) {\n" +
+          '  if (status === "loading") return "loading";\n' +
+          '  if (status === "error") return "error";\n' +
+          '  return "ready";\n' +
+          "}\n\n" +
+          "export function classifyTodosResponse(ok) {\n" +
+          '  return ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function reconcileTodos(todos, tempId, realTodo) {\n" +
+          "  return todos.map((t) => (t.id === tempId ? realTodo : t));\n" +
+          "}\n\n" +
+          "export function rollbackTodos(todos, tempId) {\n" +
+          "  return todos.filter((t) => t.id !== tempId);\n" +
+          "}\n\n" +
+          "export function toggleTodo(todos, id, nextDone) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: nextDone } : t));\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm handleToggle uses setTodos's functional updater for both the " +
+        "optimistic branch and the rollback branch (no previousDone variable carried " +
+        "across the async gap), and that toggleTodo is pure.",
+    },
+
+    // ------------------------------------------------------------------
+    // d4-t5 — delete via setTodos, no hand-tracked index for rollback
+    // ------------------------------------------------------------------
+    {
+      id: "d4-t5",
+      title: "Delete a to-do with setTodos (React mirror of d3-t5's DELETE)",
+      description:
+        "## Delete a to-do with setTodos (React mirror of d3-t5's DELETE)\n\n" +
+        "Recall d3-t5: deleting a to-do meant capturing **both** the todo and its " +
+        "array **index** before the optimistic removal, so a failed `DELETE` could " +
+        "re-insert it at the exact same position — lose the index and a failed delete " +
+        "either vanishes forever or resurrects in the wrong spot.\n\n" +
+        "In React, `setTodos`'s functional updater removes the need to track a " +
+        "position at all. The rollback branch doesn't reconstruct \"the array as it " +
+        "was\" — it just adds the todo back into whatever the *current* array is when " +
+        "the failure arrives:\n\n" +
+        "```jsx\n" +
+        "function handleDelete(todo) {\n" +
+        "  setTodos((current) => current.filter((t) => t.id !== todo.id));\n\n" +
+        '  fetch(`/api/todos/${todo.id}`, { method: "DELETE" })\n' +
+        "    .then((response) => {\n" +
+        '      if (!response.ok) throw new Error("bad response");\n' +
+        "    })\n" +
+        "    .catch(() => {\n" +
+        "      setTodos((current) => [...current, todo]);\n" +
+        '      setStatus("error");\n' +
+        "    });\n" +
+        "}\n" +
+        "```\n\n" +
+        "Notice the trade being made explicitly here: appending on rollback means the " +
+        "restored todo may land at the *end* of the list rather than its original spot " +
+        "(unlike d3-t5's positional re-insert). That's a deliberate simplification — " +
+        "exact ordering after a rare rollback is a minor display detail, and getting it " +
+        "perfectly \"right\" would mean re-introducing the same index-tracking " +
+        "bookkeeping d3-t5 needed. Most of the time, \"restore it, position be damned\" " +
+        "is the pragmatic answer — and if exact position mattered, the fix would still be " +
+        "far simpler than d3-t5's, since you'd only need to track the index at the " +
+        "*moment you call setTodos*, not thread it through render() calls by hand.\n\n" +
+        "**Your job:** wire `handleDelete` and a `.delete-btn` button per todo into " +
+        "`App.jsx`, AND implement the pure helper `removeTodo(todos, id)` (returns a " +
+        "new array with the matching todo removed) and `restoreTodo(todos, todo)` " +
+        "(returns a new array with `todo` appended) in `view.js`.",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day4-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  // TODO: handleDelete(todo) — optimistic setTodos removal, DELETE\n" +
+          "  // /api/todos/${todo.id}, re-add the todo via setTodos on failure (no\n" +
+          "  // index tracking needed).\n" +
+          "  function handleDelete(todo) {\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading\u2026</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          '        <li key={todo.id} className="todo-item">\n' +
+          "          {todo.title}\n" +
+          "          <button\n" +
+          '            className="delete-btn"\n' +
+          "            onClick={() => handleDelete(todo)}\n" +
+          "          >\n" +
+          "            \u00d7\n" +
+          "          </button>\n" +
+          "        </li>\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function pickView(status) {\n" +
+          '  if (status === "loading") return "loading";\n' +
+          '  if (status === "error") return "error";\n' +
+          '  return "ready";\n' +
+          "}\n\n" +
+          "export function classifyTodosResponse(ok) {\n" +
+          '  return ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function reconcileTodos(todos, tempId, realTodo) {\n" +
+          "  return todos.map((t) => (t.id === tempId ? realTodo : t));\n" +
+          "}\n\n" +
+          "export function rollbackTodos(todos, tempId) {\n" +
+          "  return todos.filter((t) => t.id !== tempId);\n" +
+          "}\n\n" +
+          "export function toggleTodo(todos, id, nextDone) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: nextDone } : t));\n" +
+          "}\n\n" +
+          "// TODO: implement removeTodo(todos, id) -> new array without id\n" +
+          "export function removeTodo(todos, id) {\n" +
+          "}\n\n" +
+          "// TODO: implement restoreTodo(todos, todo) -> new array with todo appended\n" +
+          "export function restoreTodo(todos, todo) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`removeTodo` is a one-line `.filter()`: `return todos.filter((t) => t.id !== id);`.",
+        "`restoreTodo` is a one-line spread-append: `return [...todos, todo];` — no index " +
+          "tracking, unlike d3-t5's positional re-insert.",
+        "handleDelete needs the whole `todo` object (not just its id) captured at click " +
+          "time, so the rollback branch has something to append back — pass the todo " +
+          "itself into the onClick handler, e.g. `onClick={() => handleDelete(todo)}`.",
+        "The DELETE call needs no body, just " +
+          '`fetch(`/api/todos/${todo.id}`, { method: "DELETE" })`.',
+      ],
+      hiddenTests: [
+        {
+          filename: "delete-todo.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { removeTodo, restoreTodo } from "./view.js";\n\n' +
+            'test("removeTodo removes exactly the matching todo", () => {\n' +
+            "  const todos = [\n" +
+            '    { id: 1, title: "Buy milk", done: false },\n' +
+            '    { id: 2, title: "Walk the dog", done: true },\n' +
+            "  ];\n" +
+            "  const result = removeTodo(todos, 1);\n" +
+            '  expect(result).toEqual([{ id: 2, title: "Walk the dog", done: true }]);\n' +
+            "});\n\n" +
+            'test("removeTodo does not mutate the original array", () => {\n' +
+            '  const todos = [{ id: 1, title: "Buy milk", done: false }];\n' +
+            "  const original = [...todos];\n" +
+            "  removeTodo(todos, 1);\n" +
+            "  expect(todos).toEqual(original);\n" +
+            "});\n\n" +
+            'test("restoreTodo appends the todo back", () => {\n' +
+            '  const todos = [{ id: 2, title: "Walk the dog", done: true }];\n' +
+            '  const removed = { id: 1, title: "Buy milk", done: false };\n' +
+            "  const result = restoreTodo(todos, removed);\n" +
+            "  expect(result).toEqual([\n" +
+            '    { id: 2, title: "Walk the dog", done: true },\n' +
+            '    { id: 1, title: "Buy milk", done: false },\n' +
+            "  ]);\n" +
+            "});\n\n" +
+            'test("restoreTodo does not mutate the original array", () => {\n' +
+            '  const todos = [{ id: 2, title: "Walk the dog", done: true }];\n' +
+            "  const original = [...todos];\n" +
+            '  restoreTodo(todos, { id: 1, title: "Buy milk", done: false });\n' +
+            "  expect(todos).toEqual(original);\n" +
+            "});\n",
+        },
+        {
+          filename: "delete-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx renders a delete-btn button per todo", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/delete-btn/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("handleDelete DELETEs to /api/todos/${todo.id}", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/function handleDelete/.test(jsx)).toBe(true);\n" +
+            '  expect(/method\\s*:\\s*["\']DELETE["\']/.test(jsx)).toBe(true);\n' +
+            "  expect(/\\/api\\/todos\\/\\$\\{/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("handleDelete uses setTodos for both the optimistic removal and rollback", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const calls = jsx.match(/setTodos\\(/g) ?? [];\n" +
+            "  expect(calls.length).toBeGreaterThanOrEqual(2);\n" +
+            "});\n\n" +
+            'test("App.jsx has zero manual DOM operations or index tracking", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/document\\.createElement/.test(jsx)).toBe(false);\n" +
+            "  expect(/innerHTML/.test(jsx)).toBe(false);\n" +
+            "  expect(/findIndex/.test(jsx)).toBe(false);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day4-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleDelete(todo) {\n" +
+          "    setTodos((current) => current.filter((t) => t.id !== todo.id));\n\n" +
+          '    fetch(`/api/todos/${todo.id}`, { method: "DELETE" })\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => [...current, todo]);\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading\u2026</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          '        <li key={todo.id} className="todo-item">\n' +
+          "          {todo.title}\n" +
+          "          <button\n" +
+          '            className="delete-btn"\n' +
+          "            onClick={() => handleDelete(todo)}\n" +
+          "          >\n" +
+          "            \u00d7\n" +
+          "          </button>\n" +
+          "        </li>\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function pickView(status) {\n" +
+          '  if (status === "loading") return "loading";\n' +
+          '  if (status === "error") return "error";\n' +
+          '  return "ready";\n' +
+          "}\n\n" +
+          "export function classifyTodosResponse(ok) {\n" +
+          '  return ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function reconcileTodos(todos, tempId, realTodo) {\n" +
+          "  return todos.map((t) => (t.id === tempId ? realTodo : t));\n" +
+          "}\n\n" +
+          "export function rollbackTodos(todos, tempId) {\n" +
+          "  return todos.filter((t) => t.id !== tempId);\n" +
+          "}\n\n" +
+          "export function toggleTodo(todos, id, nextDone) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: nextDone } : t));\n" +
+          "}\n\n" +
+          "export function removeTodo(todos, id) {\n" +
+          "  return todos.filter((t) => t.id !== id);\n" +
+          "}\n\n" +
+          "export function restoreTodo(todos, todo) {\n" +
+          "  return [...todos, todo];\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm handleDelete captures the full todo object at click time (not just the " +
+        "id) so rollback has something to restore, uses setTodos for both the optimistic " +
+        "removal and the rollback, and that removeTodo/restoreTodo are pure.",
+    },
+
+    // ------------------------------------------------------------------
+    // d4-t6 — isSubmitting via useState, no separate render() to remember
+    // ------------------------------------------------------------------
+    {
+      id: "d4-t6",
+      title: "Guard double-submit with isSubmitting useState (React mirror of d3-t6)",
+      description:
+        "## Guard double-submit with isSubmitting useState (React mirror of d3-t6)\n\n" +
+        "Recall d3-t6: preventing a double-submit meant a hand-rolled " +
+        "`state.isSubmitting` boolean that had to be reset to `false` on **every** exit " +
+        "path, AND `render()` had to be re-called to actually disable the button, AND " +
+        "`render()` itself had to remember to read `state.isSubmitting` at all. Three " +
+        "separate places to get right, for one boolean.\n\n" +
+        "In React, it's a single `useState`. The re-render-reflects-the-button part is " +
+        "automatic — `disabled={isSubmitting}` on the `<button>` JSX always matches " +
+        "whatever `isSubmitting` currently is, with no `render()` to call and no risk " +
+        "of the DOM silently drifting from state. But — and this is the point of this " +
+        "task — React does **not** save you from forgetting to reset the flag itself " +
+        "in the failure branch. That discipline is still entirely on the learner:\n\n" +
+        "```jsx\n" +
+        "function handleSubmit(event) {\n" +
+        "  event.preventDefault();\n" +
+        "  if (isSubmitting) return;\n\n" +
+        "  const value = input.trim();\n" +
+        "  if (!value) return;\n\n" +
+        "  setIsSubmitting(true);\n" +
+        '  const tempId = "temp-" + Date.now();\n' +
+        "  setTodos((current) => [...current, { id: tempId, title: value, done: false }]);\n" +
+        '  setInput("");\n\n' +
+        '  fetch("/api/todos", {\n' +
+        '    method: "POST",\n' +
+        '    headers: { "Content-Type": "application/json" },\n' +
+        "    body: JSON.stringify({ title: value }),\n" +
+        "  })\n" +
+        "    .then((response) => response.json())\n" +
+        "    .then((realTodo) => {\n" +
+        "      setTodos((current) =>\n" +
+        "        current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+        "      );\n" +
+        "      setIsSubmitting(false); // success path reset\n" +
+        "    })\n" +
+        "    .catch(() => {\n" +
+        "      setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+        "      setIsSubmitting(false); // failure path reset — easy to forget!\n" +
+        '      setStatus("error");\n' +
+        "    });\n" +
+        "}\n" +
+        "```\n\n" +
+        "**Your job:** wire `isSubmitting`/`setIsSubmitting` into `App.jsx`'s existing " +
+        "`handleSubmit` (disabling the submit `<button>` via `disabled={isSubmitting}`, " +
+        "guarding re-entry, and resetting in BOTH branches), AND implement the pure " +
+        "helper `nextSubmittingState(phase)` in `view.js`: given one of the exact " +
+        '`"start"`, `"success"`, `"failure"` strings, it returns the boolean \n' +
+        '`isSubmitting` should become — `true` for `"start"`, `false` for `"success"` ' +
+        'and `"failure"` — capturing, as a pure function, that both settle paths must ' +
+        "agree on the same reset.",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day4-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n\n' +
+          "  // TODO: add const [isSubmitting, setIsSubmitting] = useState(false);\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  // TODO: guard against re-entry, set isSubmitting true before the optimistic\n" +
+          "  // push + POST, and reset isSubmitting to false in BOTH the success .then()\n" +
+          "  // and the failure .catch().\n" +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading\u2026</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleSubmit}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          "        {/* TODO: disabled={isSubmitting} on this button */}\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          "      <ul>\n" +
+          "        {todos.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-item">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function pickView(status) {\n" +
+          '  if (status === "loading") return "loading";\n' +
+          '  if (status === "error") return "error";\n' +
+          '  return "ready";\n' +
+          "}\n\n" +
+          "export function classifyTodosResponse(ok) {\n" +
+          '  return ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function reconcileTodos(todos, tempId, realTodo) {\n" +
+          "  return todos.map((t) => (t.id === tempId ? realTodo : t));\n" +
+          "}\n\n" +
+          "export function rollbackTodos(todos, tempId) {\n" +
+          "  return todos.filter((t) => t.id !== tempId);\n" +
+          "}\n\n" +
+          "export function toggleTodo(todos, id, nextDone) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: nextDone } : t));\n" +
+          "}\n\n" +
+          "export function removeTodo(todos, id) {\n" +
+          "  return todos.filter((t) => t.id !== id);\n" +
+          "}\n\n" +
+          "export function restoreTodo(todos, todo) {\n" +
+          "  return [...todos, todo];\n" +
+          "}\n\n" +
+          "// TODO: implement nextSubmittingState(phase) -> boolean\n" +
+          "// phase is exactly one of \"start\", \"success\", \"failure\"\n" +
+          "export function nextSubmittingState(phase) {\n" +
+          "}\n",
+      },
+      hints: [
+        '`nextSubmittingState` is a one-line comparison: `return phase === "start";` — ' +
+          '"start" becomes true, both settle phases ("success"/"failure") become false.',
+        "Declare the state pair right alongside the others: " +
+          "`const [isSubmitting, setIsSubmitting] = useState(false);`.",
+        "The re-entry guard is the first real line inside `handleSubmit`: " +
+          "`if (isSubmitting) return;` — same as d3-t6, this discipline doesn't " +
+          "disappear just because you're in React.",
+        "Both `setIsSubmitting(false)` calls (success .then() and failure .catch()) must " +
+          "be present — React will faithfully re-render whichever one runs, but it won't " +
+          "add the missing one for you if you only write the success branch.",
+      ],
+      hiddenTests: [
+        {
+          filename: "submitting-state.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { nextSubmittingState } from "./view.js";\n\n' +
+            'test(\'nextSubmittingState("start") is true\', () => {\n' +
+            '  expect(nextSubmittingState("start")).toBe(true);\n' +
+            "});\n\n" +
+            'test(\'nextSubmittingState("success") is false\', () => {\n' +
+            '  expect(nextSubmittingState("success")).toBe(false);\n' +
+            "});\n\n" +
+            'test(\'nextSubmittingState("failure") is false\', () => {\n' +
+            '  expect(nextSubmittingState("failure")).toBe(false);\n' +
+            "});\n",
+        },
+        {
+          filename: "submit-guard-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx declares isSubmitting state defaulting to false", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/useState\\(\\s*false\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "  expect(/isSubmitting/.test(jsx)).toBe(true);\n" +
+            "  expect(/setIsSubmitting/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("handleSubmit guards against re-entry while submitting", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/if\\s*\\(\\s*isSubmitting\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("the submit button is disabled from isSubmitting", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/disabled=\\{isSubmitting\\}/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("setIsSubmitting(false) appears in both settle branches", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const resets = jsx.match(/setIsSubmitting\\(\\s*false\\s*\\)/g) ?? [];\n" +
+            "  expect(resets.length).toBeGreaterThanOrEqual(2);\n" +
+            "  expect(/setIsSubmitting\\(\\s*true\\s*\\)/.test(jsx)).toBe(true);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day4-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n' +
+          "  const [isSubmitting, setIsSubmitting] = useState(false);\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleSubmit(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    if (isSubmitting) return;\n\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          "    setIsSubmitting(true);\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "        setIsSubmitting(false);\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "        setIsSubmitting(false);\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading\u2026</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleSubmit}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit" disabled={isSubmitting}>\n' +
+          "          Add\n" +
+          "        </button>\n" +
+          "      </form>\n" +
+          "      <ul>\n" +
+          "        {todos.map((todo) => (\n" +
+          '          <li key={todo.id} className="todo-item">\n' +
+          "            {todo.title}\n" +
+          "          </li>\n" +
+          "        ))}\n" +
+          "      </ul>\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function pickView(status) {\n" +
+          '  if (status === "loading") return "loading";\n' +
+          '  if (status === "error") return "error";\n' +
+          '  return "ready";\n' +
+          "}\n\n" +
+          "export function classifyTodosResponse(ok) {\n" +
+          '  return ok ? "ready" : "error";\n' +
+          "}\n\n" +
+          "export function reconcileTodos(todos, tempId, realTodo) {\n" +
+          "  return todos.map((t) => (t.id === tempId ? realTodo : t));\n" +
+          "}\n\n" +
+          "export function rollbackTodos(todos, tempId) {\n" +
+          "  return todos.filter((t) => t.id !== tempId);\n" +
+          "}\n\n" +
+          "export function toggleTodo(todos, id, nextDone) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, done: nextDone } : t));\n" +
+          "}\n\n" +
+          "export function removeTodo(todos, id) {\n" +
+          "  return todos.filter((t) => t.id !== id);\n" +
+          "}\n\n" +
+          "export function restoreTodo(todos, todo) {\n" +
+          "  return [...todos, todo];\n" +
+          "}\n\n" +
+          "export function nextSubmittingState(phase) {\n" +
+          '  return phase === "start";\n' +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm isSubmitting is set to true synchronously before the optimistic push, " +
+        "the submit button's disabled prop is bound to isSubmitting, and " +
+        "setIsSubmitting(false) appears in BOTH the success and failure branches.",
     },
   ],
 };
