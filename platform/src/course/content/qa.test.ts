@@ -1,8 +1,9 @@
 /**
- * Burrow src/course/content — QA sweep (T12, SPEC.md §5, issue #15).
+ * Burrow src/course/content — QA sweep (T12, SPEC.md §5, issue #15; content
+ * expansion to 6 tasks/day per issue #23).
  *
- * The final QA gate for Workstream B. Proves EVERY authored task (all 21:
- * 3/day x 7 days) actually works end-to-end through the SAME machinery the
+ * The final QA gate for Workstream B. Proves EVERY authored task (all 42:
+ * 6/day x 7 days) actually works end-to-end through the SAME machinery the
  * framework uses to grade a learner — not a paraphrase of it.
  *
  * This does not invent a new runtime. It reuses, verbatim, the
@@ -23,7 +24,11 @@
  *   2. Global id hygiene — every task id is unique across the ENTIRE course
  *      (not just within a day), and every day's `order` is 1..7 contiguous
  *      with no gaps/dupes.
- *   3. Per-task discrimination — for every one of the 21 tasks, its
+ *   3. Count invariant — each of the 7 days has exactly 6 tasks (derived
+ *      from `days`, not hardcoded per-day slices), and the course-wide total
+ *      is exactly 42 (6 x 7). Asserted per-day AND as a sum so a future
+ *      per-day rebalance (e.g. 5+7) that still sums to 42 is caught.
+ *   4. Per-task discrimination — for every one of the 42 tasks, its
  *      `hiddenTests` PASS when run against that task's own `solution`, and
  *      FAIL when run against that task's own `starterCode`. This is the
  *      literal Definition-of-Done bar from SPEC.md §8 ("all tasks authored
@@ -32,16 +37,16 @@
  *
  * Self-containment: no new mocking is introduced here. As already documented
  * by day3-4.test.ts (day3's networking tasks) and day7.test.ts (the
- * capstone), every hidden test across all 21 tasks is authored as either (a)
+ * capstone), every hidden test across all 42 tasks is authored as either (a)
  * string/regex "shape" assertions against source, or (b) exercises a pure
  * helper function, or (c) mocks `fetch` inline and evaluates source in an
- * isolated scope. None of the 21 tasks' hiddenTests talk to a live
+ * isolated scope. None of the 42 tasks' hiddenTests talk to a live
  * `/api/todos` server, so this sweep runs under plain `bun test` with zero
  * npm installs, zero browser, and zero network — same as every suite it
  * reuses the pattern from.
  *
  * Slow on purpose: this spawns a real `bun test` subprocess per task per
- * file-set (21 tasks x 2 = 42 real subprocess runs), on top of what the
+ * file-set (42 tasks x 2 = 84 real subprocess runs), on top of what the
  * per-day suites already do. Timeouts are generous (see `test(..., { timeout })`
  * below) to absorb CI/sandbox variance.
  */
@@ -118,12 +123,13 @@ describe("QA sweep — full course schema validity", () => {
     expect(allDays.length).toBe(7);
   });
 
-  test("course has exactly 21 tasks (3 per day x 7 days)", () => {
-    const total = allDays.reduce((n, d) => n + d.tasks.length, 0);
-    expect(total).toBe(21);
+  test("course has exactly 42 tasks total (6 per day x 7 days), derived from `days`", () => {
     for (const d of allDays) {
-      expect(d.tasks.length).toBe(3);
+      expect(d.tasks.length).toBe(6);
     }
+
+    const total = allDays.reduce((n, d) => n + d.tasks.length, 0);
+    expect(total).toBe(42);
   });
 
   test("day orders are 1..7, contiguous, no gaps or duplicates", () => {
@@ -138,7 +144,24 @@ describe("QA sweep — full course schema validity", () => {
 
   test("task ids are globally unique across the entire course (not just within a day)", () => {
     const allIds = allDays.flatMap((d) => d.tasks.map((t) => t.id));
-    expect(allIds.length).toBe(21);
+    // Derived from `days` — the expected count is 6 tasks/day x 7 days, but
+    // we assert it via the same live sum used above rather than a bare
+    // literal, so this test can never drift from the actual authored count.
+    const expectedTotal = allDays.reduce((n, d) => n + d.tasks.length, 0);
+    expect(expectedTotal).toBe(42);
+    expect(allIds.length).toBe(expectedTotal);
+
+    const seen = new Map<string, number>();
+    for (const id of allIds) {
+      seen.set(id, (seen.get(id) ?? 0) + 1);
+    }
+    const duplicates = [...seen.entries()].filter(([, count]) => count > 1);
+    if (duplicates.length > 0) {
+      throw new Error(
+        `Duplicate task id(s) found across the course (must be globally unique): ` +
+          duplicates.map(([id, count]) => `"${id}" (x${count})`).join(", "),
+      );
+    }
     expect(new Set(allIds).size).toBe(allIds.length);
   });
 
@@ -157,7 +180,7 @@ describe("QA sweep — full course schema validity", () => {
   });
 });
 
-describe("QA sweep — hiddenTests PASS against solution, FAIL against starterCode (all 21 tasks)", () => {
+describe("QA sweep — hiddenTests PASS against solution, FAIL against starterCode (all 42 tasks)", () => {
   for (const day of allDays) {
     for (const task of day.tasks) {
       test(
