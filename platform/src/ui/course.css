@@ -34,26 +34,17 @@
   border-color: var(--acc-line);
 }
 
-/* Course mode hides the file tree's own header actions inside #sidebar in
-   favor of the nav-view list; sandbox mode does the reverse. Both live in
-   #sidebar permanently — only one is visible at a time, driven by
-   #app[data-mode]. */
-#app[data-mode="course"] #file-tree,
-#app[data-mode="sandbox"] #course-nav {
-  display: none;
-}
-#app[data-mode="sandbox"] #file-tree,
-#app[data-mode="course"] #course-nav {
-  display: block;
-}
+/* ADR-0007: the sidebar is FILES-ONLY in both modes — the file tree is useful
+   in course mode too (the learner edits real files). The Days->Tasks nav no
+   longer lives in #sidebar; it moved into the Task tab as a sub-left panel
+   (#task-nav below). Only the course overview + task panel are course-only. */
 #app[data-mode="sandbox"] #course-overview,
 #app[data-mode="sandbox"] #task-panel {
   display: none;
 }
 
-/* ── #sidebar: Days -> Tasks nav (nav-view.ts) ────────────────────────────── */
+/* ── Days -> Tasks nav (nav-view.ts) — now the Task tab's left sub-panel ───── */
 #course-nav {
-  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 6px 6px 12px;
@@ -111,6 +102,29 @@
 .nav-view__task--active button {
   background: var(--acc-dim);
   color: var(--acc-hi);
+}
+
+/* ── Task tab: two columns (nav sub-panel | task detail) ─ ADR-0007 ───────── */
+#task-panel {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+}
+#task-nav {
+  flex: 0 0 40%;
+  max-width: 220px;
+  min-width: 130px;
+  border-right: 1px solid var(--line2);
+  overflow: auto;
+  min-height: 0;
+}
+#task-detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
 }
 
 /* ── course overview (Days grid landing) ──────────────────────────────────── */

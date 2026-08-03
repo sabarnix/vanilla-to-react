@@ -46,7 +46,6 @@
           </span>
         </div>
         <div id="file-tree" role="tree" aria-label="workspace files"></div>
-        <div id="course-nav" aria-label="course days and tasks"></div>
       </aside>
 
       <div class="rz rz-v" id="rz-left" title="drag to resize · double-click to reset"></div>
@@ -71,7 +70,10 @@
           <button class="tab" data-tab="diff">diff <span class="cnt" id="diff-count" hidden></span></button>
         </nav>
         <div class="panels" id="right-panels">
-          <section class="panel" data-panel="task" id="task-panel" hidden></section>
+          <section class="panel" data-panel="task" id="task-panel" hidden>
+            <div id="task-nav" aria-label="course days and tasks"></div>
+            <div id="task-detail"></div>
+          </section>
           <section class="panel" data-panel="diff" id="diff-panel" hidden>
             <div id="diff-files"></div>
             <div id="diff-head" hidden>

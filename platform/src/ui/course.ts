@@ -55,6 +55,11 @@ import { tryUse } from "../contract/registry.ts";
 import { WORKSPACE_ROOT } from "../contract/types.ts";
 import { h } from "./util.ts";
 
+// NOTE: ./editor.ts pulls in monaco (which touches `window` at import time and
+// can't load under `bun test`'s non-DOM env). course.test.ts imports THIS file
+// for its pure helpers, so editor is imported LAZILY inside the runtime-only
+// paths below rather than statically — keeping the static graph DOM-free.
+
 // ── pure helpers (unit-testable, no DOM) ────────────────────────────────────
 
 /**
@@ -95,8 +100,10 @@ export function loadCourse(): Course {
 // ── DOM orchestration ───────────────────────────────────────────────────────
 
 export interface CourseElements {
-  /** #sidebar's nav host — replaces the file tree while in course mode. */
+  /** The Task tab's left sub-panel host for the Days->Tasks nav (ADR-0007: nav moved out of #sidebar). */
   sidebar: HTMLElement;
+  /** The Task tab's right column: task description / hints / actions (ADR-0007). */
+  taskDetail: HTMLElement;
   /** The real editor-pane's tabs/host/empty triplet lives in src/ui/editor.ts; course.ts only opens files into it. */
   overviewHost: HTMLElement;
   /** New "task" panel host inside #rightbar. */
@@ -134,8 +141,35 @@ function primaryFileFor(task: Task): string {
   return first;
 }
 
+/**
+ * A course-provided static preview server, seeded alongside each task's files
+ * (ADR-0007 §4). It serves the task directory over Bun.serve so EVERY task
+ * type (static HTML/CSS/JS, React bundles, etc.) gets a live preview — not just
+ * tasks that ship their own server. Runs on the in-tab bun.wasm runtime
+ * (which supports Bun.serve; distinct from grading, which stays deferred per
+ * ADR-0006). `bun run --hot` re-serves on file change, so edits refresh live.
+ */
+const PREVIEW_SERVER_FILENAME = "_preview-server.ts";
+const PREVIEW_SERVER_SRC = `// Auto-generated per task (ADR-0007) — static file server for live preview.
+import { serve, file } from "bun";
+const ROOT = new URL(".", import.meta.url).pathname;
+serve({
+  port: 3000,
+  async fetch(req) {
+    const url = new URL(req.url);
+    let p = decodeURIComponent(url.pathname);
+    if (p === "/" || p.endsWith("/")) p += "index.html";
+    const f = file(ROOT + p.replace(/^\\/+/, ""));
+    if (await f.exists()) return new Response(f);
+    const idx = file(ROOT + "index.html");
+    if (await idx.exists()) return new Response(idx);
+    return new Response("not found", { status: 404 });
+  },
+});
+`;
+
 /** Write a task's FileMap into the real VFS under its task directory, then open the primary file in the real editor. */
-async function seedTaskFiles(task: Task, files: FileMap): Promise<void> {
+async function seedTaskFiles(task: Task, files: FileMap, opts?: { openPrimary?: boolean }): Promise<void> {
   const vfs = tryUse("vfs");
   const events = tryUse("events");
   if (!vfs || !events) return;
@@ -147,8 +181,33 @@ async function seedTaskFiles(task: Task, files: FileMap): Promise<void> {
     if (parent !== dir) await vfs.mkdir(parent, { recursive: true });
     await vfs.writeFile(path, contents);
   }
-  const primary = `${dir}/${primaryFileFor(task)}`;
-  events.emit("editor:open", { path: primary });
+  // Seed the static preview server alongside the task files (only if the task
+  // doesn't already ship one of its own).
+  if (!(PREVIEW_SERVER_FILENAME in files)) {
+    await vfs.writeFile(`${dir}/${PREVIEW_SERVER_FILENAME}`, PREVIEW_SERVER_SRC);
+  }
+  if (opts?.openPrimary !== false) {
+    const primary = `${dir}/${primaryFileFor(task)}`;
+    events.emit("editor:open", { path: primary });
+  }
+}
+
+/**
+ * Start (or restart) the continuous static preview for a task (ADR-0007 §4).
+ * Best-effort: runs the seeded static server via the shell so it flows through
+ * the same run/preview machinery the sandbox uses; failures are non-fatal
+ * (preview simply stays on its "nothing listening" placeholder).
+ */
+async function startTaskPreview(task: Task): Promise<void> {
+  const shell = tryUse("shell");
+  if (!shell) return;
+  const server = `${taskDir(task)}/${PREVIEW_SERVER_FILENAME}`;
+  try {
+    // --hot keeps it serving and re-runs on edits so the preview refreshes live.
+    await shell.exec(`bun run --hot ${JSON.stringify(server)}`, { echo: false });
+  } catch (err) {
+    console.error("[burrow/course] preview start failed", err);
+  }
 }
 
 /** Render the Days -> Tasks landing grid (shown when there's no saved position yet). */
@@ -214,20 +273,33 @@ export function initCourse(app: HTMLElement, els: CourseElements): CourseHandle 
   async function openCurrentTask(): Promise<void> {
     const task = currentTask();
     progress.setPosition(navigation.current);
+    // ADR-0007: clear any tabs left open from the previous problem before
+    // seeding + opening this task's files, so tabs don't accumulate.
+    // Lazy import keeps monaco out of the pure-helper test graph (see top note).
+    try {
+      const { closeAllTabs } = await import("./editor.ts");
+      closeAllTabs();
+    } catch (err) {
+      console.error("[burrow/course] closeAllTabs failed", err);
+    }
     await seedTaskFiles(task, task.starterCode);
     renderTaskPanel(task);
     navRender?.render();
+    // ADR-0007 §4: every task gets a continuous live preview, auto-started here.
+    void startTaskPreview(task);
   }
 
   function renderTaskPanel(task: Task): void {
-    els.taskPanel.replaceChildren();
+    // ADR-0007: nav lives in the Task tab's left sub-panel (els.sidebar host);
+    // the description / hints / actions render into the right detail column.
+    els.taskDetail.replaceChildren();
 
     const description = h("div", "task-panel-description");
     description.innerHTML = renderTaskDescription(task);
-    els.taskPanel.append(description);
+    els.taskDetail.append(description);
 
     const hintsHost = h("div", "task-panel-hints");
-    els.taskPanel.append(hintsHost);
+    els.taskDetail.append(hintsHost);
     hintsHandle?.destroy();
     const hintController = createHintController(task);
     hintsHandle = mountHintsView(hintController, {
@@ -271,7 +343,7 @@ export function initCourse(app: HTMLElement, els: CourseElements): CourseHandle 
     });
     actions.append(doneBtn);
 
-    els.taskPanel.append(actions);
+    els.taskDetail.append(actions);
 
     // Reset the bottombar's test-results host back to its idle state for
     // the newly-opened task (a stale previous task's deferred notice

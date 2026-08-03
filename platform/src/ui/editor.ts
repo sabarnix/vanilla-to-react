@@ -166,6 +166,18 @@ export function flushPendingSaves(): void {
   autosave.flushAll();
 }
 
+/**
+ * Close every open editor tab (ADR-0007): flushes pending saves first so no
+ * edits are lost, then disposes each doc/model. Used by course mode on task
+ * switch so tabs from a previous problem don't accumulate.
+ */
+export function closeAllTabs(): void {
+  autosave.flushAll();
+  for (const path of [...order]) {
+    close(path);
+  }
+}
+
 export function initEditor(tabs: HTMLElement, host: HTMLElement, empty: HTMLElement): void {
   tabsEl = tabs;
   hostEl = host;

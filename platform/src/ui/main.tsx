@@ -135,7 +135,8 @@ async function boot(): Promise<void> {
   // sandbox/editor experience underneath is unaffected either way.
   step("course", () =>
     initCourse(must("app"), {
-      sidebar: must("course-nav"),
+      sidebar: must("task-nav"),
+      taskDetail: must("task-detail"),
       overviewHost: must("course-overview"),
       taskPanel: must("task-panel"),
       testResults: must("test-results-panel"),
