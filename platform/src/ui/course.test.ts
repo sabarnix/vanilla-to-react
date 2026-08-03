@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { advanceAfterMarkDone, decideBootView, loadCourse } from "./course.ts";
+import { advanceAfterMarkDone, buildPreviewServerSrc, decideBootView, loadCourse } from "./course.ts";
 import { validateCourse } from "../course/schema.ts";
 import type { NavigationPosition } from "../course/navigation.ts";
 
@@ -58,5 +58,40 @@ describe("loadCourse", () => {
     expect(course.days.length).toBe(7);
     const orders = [...course.days].sort((a, b) => a.order - b.order).map((d) => d.order);
     expect(orders).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+});
+
+describe("buildPreviewServerSrc (ADR-0008)", () => {
+  test("emits an `export default { fetch }` server (the detected shape)", () => {
+    const src = buildPreviewServerSrc({ "index.html": "<h1>hi</h1>" });
+    expect(src).toContain("export default");
+    expect(src).toContain("fetch(req)");
+    // Must NOT use imperative Bun.serve (not detected) or VFS reads (workers can't).
+    expect(src).not.toContain("Bun.serve");
+    expect(src).not.toContain("Bun.file");
+  });
+
+  test("inlines file contents (no disk reads at runtime)", () => {
+    const src = buildPreviewServerSrc({ "index.html": "<h1>MARKER_ABC</h1>", "app.js": "const X=42;" });
+    expect(src).toContain("MARKER_ABC");
+    expect(src).toContain("const X=42");
+  });
+
+  test("safely escapes file contents with quotes/newlines via JSON", () => {
+    const tricky = `<a href="x">'y'</a>\n<script>1<2</script>`;
+    const src = buildPreviewServerSrc({ "index.html": tricky });
+    // Round-trip: the inlined FILES table must parse back to the exact content.
+    const m = /const FILES = (.*);\nconst HAS_INDEX/.exec(src);
+    expect(m).not.toBeNull();
+    const json = m?.[1] ?? "{}";
+    const table = JSON.parse(json) as Record<string, { type: string; body: string }>;
+    const entry = table["/index.html"];
+    expect(entry?.body).toBe(tricky);
+    expect(entry?.type).toContain("text/html");
+  });
+
+  test("excludes the generated server file itself from what it serves", () => {
+    const src = buildPreviewServerSrc({ "index.html": "x", "_preview-server.ts": "should-not-appear" });
+    expect(src).not.toContain("should-not-appear");
   });
 });

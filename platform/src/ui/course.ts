@@ -142,31 +142,65 @@ function primaryFileFor(task: Task): string {
 }
 
 /**
- * A course-provided static preview server, seeded alongside each task's files
- * (ADR-0007 §4). It serves the task directory over Bun.serve so EVERY task
- * type (static HTML/CSS/JS, React bundles, etc.) gets a live preview — not just
- * tasks that ship their own server. Runs on the in-tab bun.wasm runtime
- * (which supports Bun.serve; distinct from grading, which stays deferred per
- * ADR-0006). `bun run --hot` re-serves on file change, so edits refresh live.
+ * Continuous per-task preview (ADR-0007 §4, revised per ADR-0008).
+ *
+ * Runtime constraints that shape this (COMPAT.md): (1) the preview pipeline
+ * only detects a server whose module has `export default { fetch }` (see
+ * toolchain/handler-shape.ts) — an imperative `Bun.serve({...})` call is NOT
+ * detected; and (2) run workers have NO filesystem/VFS access (`Bun.file`,
+ * node:fs throw), so a server CANNOT read sibling task files at runtime.
+ *
+ * Therefore we GENERATE a `export default { fetch }` server with the task's
+ * files INLINED as in-memory string constants, and serve them from memory.
+ * It is a snapshot: it reflects the file contents at generation time, so it is
+ * (re)generated + (re)run on task entry and on an explicit "refresh preview"
+ * action (keystroke-live refresh is impossible without VFS access from the
+ * worker).
  */
 const PREVIEW_SERVER_FILENAME = "_preview-server.ts";
-const PREVIEW_SERVER_SRC = `// Auto-generated per task (ADR-0007) — static file server for live preview.
-import { serve, file } from "bun";
-const ROOT = new URL(".", import.meta.url).pathname;
-serve({
-  port: 3000,
-  async fetch(req) {
-    const url = new URL(req.url);
-    let p = decodeURIComponent(url.pathname);
-    if (p === "/" || p.endsWith("/")) p += "index.html";
-    const f = file(ROOT + p.replace(/^\\/+/, ""));
-    if (await f.exists()) return new Response(f);
-    const idx = file(ROOT + "index.html");
-    if (await idx.exists()) return new Response(idx);
-    return new Response("not found", { status: 404 });
-  },
-});
-`;
+
+/** MIME type by extension for the inlined static responses. */
+function previewContentType(name: string): string {
+  if (name.endsWith(".html")) return "text/html; charset=utf-8";
+  if (name.endsWith(".css")) return "text/css; charset=utf-8";
+  if (name.endsWith(".js") || name.endsWith(".mjs")) return "text/javascript; charset=utf-8";
+  if (name.endsWith(".json")) return "application/json; charset=utf-8";
+  if (name.endsWith(".svg")) return "image/svg+xml";
+  return "text/plain; charset=utf-8";
+}
+
+/**
+ * Build the `export default { fetch }` preview server source with `files`
+ * inlined. Only text assets are inlined (the course tasks are HTML/CSS/JS);
+ * the router serves "/" -> index.html and falls back to index.html (SPA-style).
+ */
+export function buildPreviewServerSrc(files: FileMap): string {
+  const table: Record<string, { type: string; body: string }> = {};
+  for (const [name, contents] of Object.entries(files)) {
+    if (name === PREVIEW_SERVER_FILENAME) continue;
+    table["/" + name] = { type: previewContentType(name), body: contents };
+  }
+  const hasIndex = "/index.html" in table;
+  // JSON.stringify the whole table so file contents are safely escaped.
+  return (
+    `// Auto-generated per task (ADR-0007/0008) — inlined static preview server.\n` +
+    `// export default { fetch } is the shape the runner detects (handler-shape.ts);\n` +
+    `// files are inlined because run workers cannot read the VFS (COMPAT.md).\n` +
+    `const FILES = ${JSON.stringify(table)};\n` +
+    `const HAS_INDEX = ${JSON.stringify(hasIndex)};\n` +
+    `export default {\n` +
+    `  fetch(req) {\n` +
+    `    const url = new URL(req.url);\n` +
+    `    let p = decodeURIComponent(url.pathname);\n` +
+    `    if (p === "/" || p.endsWith("/")) p += "index.html";\n` +
+    `    let hit = FILES[p];\n` +
+    `    if (!hit && HAS_INDEX) hit = FILES["/index.html"]; // SPA fallback\n` +
+    `    if (!hit) return new Response("not found", { status: 404 });\n` +
+    `    return new Response(hit.body, { headers: { "content-type": hit.type } });\n` +
+    `  },\n` +
+    `};\n`
+  );
+}
 
 /** Write a task's FileMap into the real VFS under its task directory, then open the primary file in the real editor. */
 async function seedTaskFiles(task: Task, files: FileMap, opts?: { openPrimary?: boolean }): Promise<void> {
@@ -181,10 +215,11 @@ async function seedTaskFiles(task: Task, files: FileMap, opts?: { openPrimary?: 
     if (parent !== dir) await vfs.mkdir(parent, { recursive: true });
     await vfs.writeFile(path, contents);
   }
-  // Seed the static preview server alongside the task files (only if the task
-  // doesn't already ship one of its own).
+  // Seed the generated inlined preview server alongside the task files (only if
+  // the task doesn't already ship one of its own). Built from the SAME `files`
+  // just written, so the preview snapshot matches what was seeded.
   if (!(PREVIEW_SERVER_FILENAME in files)) {
-    await vfs.writeFile(`${dir}/${PREVIEW_SERVER_FILENAME}`, PREVIEW_SERVER_SRC);
+    await vfs.writeFile(`${dir}/${PREVIEW_SERVER_FILENAME}`, buildPreviewServerSrc(files));
   }
   if (opts?.openPrimary !== false) {
     const primary = `${dir}/${primaryFileFor(task)}`;
@@ -193,21 +228,47 @@ async function seedTaskFiles(task: Task, files: FileMap, opts?: { openPrimary?: 
 }
 
 /**
- * Start (or restart) the continuous static preview for a task (ADR-0007 §4).
- * Best-effort: runs the seeded static server via the shell so it flows through
- * the same run/preview machinery the sandbox uses; failures are non-fatal
- * (preview simply stays on its "nothing listening" placeholder).
+ * Start (or restart) the per-task preview (ADR-0007 §4 / ADR-0008).
+ * Runs the generated `export default { fetch }` server through the same shell
+ * run/preview machinery the sandbox uses (`bun run <file>`), which the runner
+ * detects and wires to /preview/*. Best-effort: failures are non-fatal (the
+ * preview simply keeps its "nothing listening" placeholder). `echo:true` so the
+ * terminal/console tell the same story as a manual run.
+ *
+ * `regenerateFrom`, when given, re-inlines the CURRENT editor/VFS file contents
+ * before running (the "refresh preview" path); otherwise the already-seeded
+ * snapshot server is run as-is.
  */
-async function startTaskPreview(task: Task): Promise<void> {
+async function startTaskPreview(task: Task, regenerateFrom?: FileMap): Promise<void> {
   const shell = tryUse("shell");
+  const vfs = tryUse("vfs");
   if (!shell) return;
-  const server = `${taskDir(task)}/${PREVIEW_SERVER_FILENAME}`;
+  const dir = taskDir(task);
+  const server = `${dir}/${PREVIEW_SERVER_FILENAME}`;
   try {
-    // --hot keeps it serving and re-runs on edits so the preview refreshes live.
-    await shell.exec(`bun run --hot ${JSON.stringify(server)}`, { echo: false });
+    if (regenerateFrom && vfs) {
+      await vfs.writeFile(server, buildPreviewServerSrc(regenerateFrom));
+    }
+    await shell.exec(`bun run '${server.replaceAll("'", "'\\''")}'`, { echo: true });
   } catch (err) {
     console.error("[burrow/course] preview start failed", err);
   }
+}
+
+/** Read the current on-disk contents of a task's starter files from the VFS (for refresh). */
+async function readCurrentTaskFiles(task: Task): Promise<FileMap> {
+  const vfs = tryUse("vfs");
+  const dir = taskDir(task);
+  const out: FileMap = {};
+  if (!vfs) return task.starterCode;
+  for (const name of Object.keys(task.starterCode)) {
+    try {
+      out[name] = await vfs.readFile(`${dir}/${name}`);
+    } catch {
+      out[name] = task.starterCode[name] ?? "";
+    }
+  }
+  return out;
 }
 
 /** Render the Days -> Tasks landing grid (shown when there's no saved position yet). */
@@ -320,6 +381,16 @@ export function initCourse(app: HTMLElement, els: CourseElements): CourseHandle 
       renderDeferredGradingNotice(els.testResults);
     });
     actions.append(runBtn);
+
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.className = "task-panel-refresh";
+    refreshBtn.textContent = "\u21BB refresh preview";
+    refreshBtn.title = "re-run the preview with your current edits";
+    refreshBtn.addEventListener("click", () => {
+      void readCurrentTaskFiles(task).then((files) => startTaskPreview(task, files));
+    });
+    actions.append(refreshBtn);
 
     const doneBtn = document.createElement("button");
     doneBtn.type = "button";
