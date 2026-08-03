@@ -27,6 +27,11 @@
  * day3-4.test.ts's "shape" tests), or (b) exercises a **pure helper
  * function** co-authored in `view.js` alongside each task's component — so
  * `bun test` runs with zero npm installs, zero JSX, zero DOM, zero network.
+ *
+ * D4(#22) expanded day7 from 3 to 6 tasks: d7-t4 (filtering + derived
+ * remaining-count), d7-t5 (optimistic rename with validation), and d7-t6
+ * (bulk "clear completed" + final polish) were appended after the original
+ * d7-t1..t3, following the exact same pure-helper + shape-test approach.
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
@@ -129,8 +134,8 @@ describe("Day 7 — schema validity (in context of all seven days)", () => {
 });
 
 describe("Day 7 — task count and titles", () => {
-  test("day7 has 3 tasks", () => {
-    expect(day7.tasks.length).toBe(3);
+  test("day7 has 6 tasks", () => {
+    expect(day7.tasks.length).toBe(6);
   });
 
   test("day7 task titles", () => {
@@ -138,6 +143,20 @@ describe("Day 7 — task count and titles", () => {
       "Assemble the app shell (App -> TodoList -> TodoItem, wired)",
       "Wire create/toggle/delete to /api/todos end-to-end",
       "Ship it: empty state, error state, and full CRUD polished",
+      "Filter the list and derive a remaining-items count",
+      "Add optimistic rename with validation",
+      "Ship it (v2): bulk-clear completed todos, filter and count wired together",
+    ]);
+  });
+
+  test("day7 task ids are the expected d7-t1..t6, in order", () => {
+    expect(day7.tasks.map((t) => t.id)).toEqual([
+      "d7-t1",
+      "d7-t2",
+      "d7-t3",
+      "d7-t4",
+      "d7-t5",
+      "d7-t6",
     ]);
   });
 });

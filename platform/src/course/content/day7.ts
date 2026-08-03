@@ -6,16 +6,17 @@
  *
  *   GET    /api/todos      -> 200 JSON array of { id, title, done }
  *   POST   /api/todos      -> 201 JSON { id, title, done }  (body: { title })
- *   PUT    /api/todos/:id  -> 200 JSON { id, title, done }  (body: { done })
+ *   PUT    /api/todos/:id  -> 200 JSON { id, title, done }  (body: { done } or { title })
  *   DELETE /api/todos/:id  -> 200/204
  *
  * This is the culminating day: every idea from Days 4-6 — `useState` for
  * declarative UI (d4-t1), `useEffect` for fetch-on-mount with cleanup
  * (d4-t2, d6-t1..t3), optimistic writes without manual reconciliation
  * bookkeeping (d4-t3), and component composition via props/callback-props
- * (d5-t1..t3) — gets assembled into one shippable app, plus the two CRUD
+ * (d5-t1..t3) — gets assembled into one shippable app, plus the CRUD
  * operations the course hasn't exercised yet: **toggling done** against the
- * server (Day 5's d5-t2 only toggled *local* state) and **deleting** a todo:
+ * server (Day 5's d5-t2 only toggled *local* state), **deleting** a todo,
+ * **renaming** a todo, and **filtering** / bulk-clearing a finished list:
  *
  *   d7-t1 — **app shell composition.** `App` fetches todos on mount
  *           (`d4-t2`/`d6-t1`'s shape) and renders `TodoList` (`d5-t3`'s
@@ -35,7 +36,7 @@
  *           `render()` to remember, no manual reconciliation — a
  *           `setTodos` call *is* the update, React re-renders from
  *           whatever the latest state is.
- *   d7-t3 — **ship it.** The capstone deliverable: the same app, fully
+ *   d7-t3 — **ship it (v1).** The capstone deliverable: the same app, fully
  *           polished — an explicit **empty state** ("nothing to do yet"),
  *           `d6-t1`'s three-state loading/error/ready split all reachable,
  *           and all four CRUD operations (create, read, toggle, delete)
@@ -43,6 +44,30 @@
  *           the "first-time learner can complete Day 1 with zero setup"
  *           promise (SPEC.md §8) turned around: by Day 7 the *same*
  *           learner ships a real, working app end to end.
+ *   d7-t4 — **filtering + derived state.** Add an All/Active/Completed
+ *           filter, driven by exactly **one** new piece of state (the
+ *           current filter string) — the visible list itself is never
+ *           stored, it's *derived* from `todos` + `filter` on every render
+ *           (same discipline as d7-t3's `deriveViewState`: don't store what
+ *           you can compute). Also derive a "N items left" count the same
+ *           way. This is the lesson that not every UI concern needs a
+ *           `useState` — most of the time it needs a pure function of
+ *           state that already exists.
+ *   d7-t5 — **optimistic rename.** The one CRUD write the course hasn't
+ *           touched: editing a todo's `title` in place. Applies the exact
+ *           same optimistic-update-then-reconcile-or-rollback protocol as
+ *           d7-t2's toggle/delete — now for the fourth time — extended
+ *           with a validation rule real apps need (reject an empty/
+ *           whitespace-only rename rather than optimistically saving
+ *           blank text).
+ *   d7-t6 — **ship it (v2): bulk actions + final polish.** The last
+ *           capstone task: a "Clear completed" bulk action (optimistic,
+ *           same rollback discipline, now acting on *multiple* todos in
+ *           one optimistic update instead of one), combined with d7-t4's
+ *           filter + count so the finished app can answer "how many are
+ *           left" and clear a filtered batch without a page reload. This
+ *           is the final, fully-loaded version of the app every earlier
+ *           d7 task built toward.
  *
  * Hidden tests follow Day 4/5/6's proven approach exactly (see their doc
  * comments): every hidden test exercises either (a) a **pure,
@@ -1304,6 +1329,1460 @@ export const day7: Day = {
         "can immediately add their first todo, and that every CRUD handler from d7-t2 " +
         "(create/toggle/delete, each optimistic with rollback-on-failure) is untouched " +
         "and still correct — this is the shippable, capstone version of the app.",
+    },
+
+    // ------------------------------------------------------------------
+    // d7-t4 — filtering + derived state (All/Active/Completed, item count)
+    // ------------------------------------------------------------------
+    {
+      id: "d7-t4",
+      title: "Filter the list and derive a remaining-items count",
+      description:
+        "## Filter the list and derive a remaining-items count\n\n" +
+        "d7-t3 shipped a working app, but every real to-do list needs a way " +
+        "to focus on what's left to do. Add an **All / Active / Completed** " +
+        "filter above the list, plus a small \"N items left\" summary — " +
+        "both driven by data that already exists.\n\n" +
+        "The important design decision: the filter needs exactly **one** " +
+        "new piece of state, the currently selected filter value. The " +
+        "*filtered list itself* is never stored in state — it's **derived** " +
+        "on every render from `todos` + `filter`, the same discipline as " +
+        "d7-t3's `deriveViewState`. If you catch yourself writing " +
+        '`useState` for "visibleTodos", stop — that\'s a bug waiting to ' +
+        "happen (the filtered copy would drift out of sync with `todos` " +
+        "the moment a toggle/delete/add happens elsewhere).\n\n" +
+        "```jsx\n" +
+        'function App() {\n' +
+        '  const [filter, setFilter] = useState("all"); // "all" | "active" | "completed"\n' +
+        "  // ...existing status/todos/input state from d7-t1..t3, unchanged\n\n" +
+        "  const visibleTodos = filterTodos(todos, filter);\n" +
+        "  const remainingCount = countRemaining(todos);\n\n" +
+        "  return (\n" +
+        "    <>\n" +
+        "      {/* ...existing form... */}\n" +
+        '      <div className="todo-filters">\n' +
+        '        <button onClick={() => setFilter("all")}>All</button>\n' +
+        '        <button onClick={() => setFilter("active")}>Active</button>\n' +
+        '        <button onClick={() => setFilter("completed")}>Completed</button>\n' +
+        "      </div>\n" +
+        '      <p className="todo-count">{remainingCount} items left</p>\n' +
+        "      <TodoList todos={visibleTodos} onToggleTodo={handleToggle} onDeleteTodo={handleDelete} />\n" +
+        "    </>\n" +
+        "  );\n" +
+        "}\n" +
+        "```\n\n" +
+        "Notice `TodoList` still receives a plain `todos` prop — it has no " +
+        "idea filtering exists, it just renders whatever array it's handed. " +
+        "Filtering is entirely `App`'s concern, computed fresh every render.\n\n" +
+        "**Your job:** add the `filter` state and the three filter buttons " +
+        "to `App.jsx`, render `<TodoList>` with the **filtered** list " +
+        "(not raw `todos`), render the `{remainingCount} items left` " +
+        "summary, and implement two pure helpers in `view.js`:\n\n" +
+        '- `filterTodos(todos, filter)` — returns a **new** array: all ' +
+        'todos when `filter === "all"`, only `done === false` todos when ' +
+        '`filter === "active"`, only `done === true` todos when ' +
+        '`filter === "completed"`. Must not mutate the input.\n' +
+        "- `countRemaining(todos)` — returns the number of todos whose " +
+        "`done` is `false` (works against the **full**, unfiltered list, " +
+        "so the count doesn't change just because the filter view changes).",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day7-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n' +
+          "  // TODO: add filter state, initialized to \"all\".\n\n" +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleAdd(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, done: !t.done } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    const target = next.find((t) => t.id === id);\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: target.done }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleDelete(id) {\n" +
+          "    const previous = todos;\n" +
+          "    setTodos(todos.filter((t) => t.id !== id));\n\n" +
+          '    fetch(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {\n' +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  // TODO: compute visibleTodos via filterTodos(todos, filter) and\n" +
+          "  // remainingCount via countRemaining(todos). Render the filter\n" +
+          "  // buttons (All/Active/Completed, each calling setFilter), the\n" +
+          '  // "{remainingCount} items left" summary, and pass visibleTodos\n' +
+          "  // (not raw todos) to <TodoList>.\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleAdd}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          "      {todos.length === 0 ? (\n" +
+          '        <p className="todo-status">\n' +
+          "          Nothing to do yet — add your first todo above!\n" +
+          "        </p>\n" +
+          "      ) : (\n" +
+          "        <TodoList\n" +
+          "          todos={todos}\n" +
+          "          onToggleTodo={handleToggle}\n" +
+          "          onDeleteTodo={handleDelete}\n" +
+          "        />\n" +
+          "      )}\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo, onDeleteTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem\n" +
+          "          key={todo.id}\n" +
+          "          todo={todo}\n" +
+          "          onToggle={onToggleTodo}\n" +
+          "          onDelete={onDeleteTodo}\n" +
+          "        />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle, onDelete }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          '      <button onClick={() => onDelete(todo.id)}>Delete</button>\n' +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "view.js":
+          "// TODO: implement filterTodos(todos, filter) -> new array filtered by\n" +
+          '// "all" | "active" | "completed". Do not mutate input.\n' +
+          "export function filterTodos(todos, filter) {\n" +
+          "}\n\n" +
+          "// TODO: implement countRemaining(todos) -> number of todos where\n" +
+          "// done is false.\n" +
+          "export function countRemaining(todos) {\n" +
+          "}\n",
+      },
+      hints: [
+        '`filterTodos` is a `.filter()` with a small switch/if on the `filter` string: return the array unchanged (a copy) for "all", `.filter((t) => !t.done)` for "active", `.filter((t) => t.done)` for "completed".',
+        "`countRemaining` is `todos.filter((t) => !t.done).length` — one line, and it always looks at the **full** `todos` array, never the filtered view.",
+        "Keep `filter` as its own `useState` — don't derive it from anything, it's genuine user input (which button they clicked). What's *derived* is the visible list and the count, not the filter selection itself.",
+        "`<TodoList>` keeps the exact same props it already had (`todos`, `onToggleTodo`, `onDeleteTodo`) — only the *value* passed as `todos` changes, from `todos` to `visibleTodos`. `TodoList`/`TodoItem` don't need any changes at all.",
+      ],
+      hiddenTests: [
+        {
+          filename: "filter-helpers.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { filterTodos, countRemaining } from "./view.js";\n\n' +
+            "const sample = [\n" +
+            '  { id: 1, title: "A", done: false },\n' +
+            '  { id: 2, title: "B", done: true },\n' +
+            '  { id: 3, title: "C", done: false },\n' +
+            "];\n\n" +
+            'test(\'filterTodos returns every todo for "all"\', () => {\n' +
+            '  expect(filterTodos(sample, "all")).toEqual(sample);\n' +
+            "});\n\n" +
+            'test(\'filterTodos returns only not-done todos for "active"\', () => {\n' +
+            '  const result = filterTodos(sample, "active");\n' +
+            "  expect(result).toEqual([\n" +
+            '    { id: 1, title: "A", done: false },\n' +
+            '    { id: 3, title: "C", done: false },\n' +
+            "  ]);\n" +
+            "});\n\n" +
+            'test(\'filterTodos returns only done todos for "completed"\', () => {\n' +
+            '  const result = filterTodos(sample, "completed");\n' +
+            '  expect(result).toEqual([{ id: 2, title: "B", done: true }]);\n' +
+            "});\n\n" +
+            'test("filterTodos does not mutate the original array", () => {\n' +
+            "  const original = JSON.parse(JSON.stringify(sample));\n" +
+            '  filterTodos(sample, "active");\n' +
+            "  expect(sample).toEqual(original);\n" +
+            "});\n\n" +
+            'test("countRemaining counts only not-done todos, ignoring filter concerns", () => {\n' +
+            "  expect(countRemaining(sample)).toBe(2);\n" +
+            "  expect(countRemaining([])).toBe(0);\n" +
+            '  expect(countRemaining([{ id: 1, title: "X", done: true }])).toBe(0);\n' +
+            "});\n",
+        },
+        {
+          filename: "filter-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx has filter state initialized to \\"all\\"", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/useState\\(\\s*["\']all["\']\\s*\\)/.test(jsx)).toBe(true);\n' +
+            "});\n\n" +
+            'test("App.jsx renders All/Active/Completed filter buttons", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/>All</.test(jsx)).toBe(true);\n" +
+            "  expect(/>Active</.test(jsx)).toBe(true);\n" +
+            "  expect(/>Completed</.test(jsx)).toBe(true);\n" +
+            '  expect(/setFilter\\(/.test(jsx)).toBe(true);\n' +
+            "});\n\n" +
+            'test("App.jsx passes a filtered list (not raw todos) into TodoList", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/filterTodos\\(/.test(jsx)).toBe(true);\n' +
+            "  expect(/<TodoList[\\s\\S]*?todos=\\{visibleTodos\\}/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx renders a remaining-items count derived from countRemaining", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/countRemaining\\(/.test(jsx)).toBe(true);\n' +
+            "  expect(/items left/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx does not stash the filtered list in its own useState", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/useState\\(\\s*\\[\\s*\\]\\s*\\)/.test(jsx)).toBe(true);\n' +
+            "  const visibleTodosStateDeclared =\n" +
+            '    /const\\s*\\[\\s*visibleTodos\\s*,\\s*setVisibleTodos\\s*\\]\\s*=\\s*useState/.test(\n' +
+            "      jsx,\n" +
+            "    );\n" +
+            "  expect(visibleTodosStateDeclared).toBe(false);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day7-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import { filterTodos, countRemaining } from "./view.js";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n' +
+          '  const [filter, setFilter] = useState("all");\n\n' +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleAdd(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, done: !t.done } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    const target = next.find((t) => t.id === id);\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: target.done }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleDelete(id) {\n" +
+          "    const previous = todos;\n" +
+          "    setTodos(todos.filter((t) => t.id !== id));\n\n" +
+          '    fetch(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {\n' +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  const visibleTodos = filterTodos(todos, filter);\n" +
+          "  const remainingCount = countRemaining(todos);\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleAdd}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          '      <div className="todo-filters">\n' +
+          '        <button onClick={() => setFilter("all")}>All</button>\n' +
+          '        <button onClick={() => setFilter("active")}>Active</button>\n' +
+          '        <button onClick={() => setFilter("completed")}>Completed</button>\n' +
+          "      </div>\n" +
+          '      <p className="todo-count">{remainingCount} items left</p>\n' +
+          "      {todos.length === 0 ? (\n" +
+          '        <p className="todo-status">\n' +
+          "          Nothing to do yet — add your first todo above!\n" +
+          "        </p>\n" +
+          "      ) : (\n" +
+          "        <TodoList\n" +
+          "          todos={visibleTodos}\n" +
+          "          onToggleTodo={handleToggle}\n" +
+          "          onDeleteTodo={handleDelete}\n" +
+          "        />\n" +
+          "      )}\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo, onDeleteTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem\n" +
+          "          key={todo.id}\n" +
+          "          todo={todo}\n" +
+          "          onToggle={onToggleTodo}\n" +
+          "          onDelete={onDeleteTodo}\n" +
+          "        />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle, onDelete }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          '      <button onClick={() => onDelete(todo.id)}>Delete</button>\n' +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "view.js":
+          "export function filterTodos(todos, filter) {\n" +
+          '  if (filter === "active") return todos.filter((t) => !t.done);\n' +
+          '  if (filter === "completed") return todos.filter((t) => t.done);\n' +
+          "  return [...todos];\n" +
+          "}\n\n" +
+          "export function countRemaining(todos) {\n" +
+          "  return todos.filter((t) => !t.done).length;\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm exactly one new piece of state (`filter`) was introduced, that the " +
+        "visible list and remaining count are both computed fresh on every render from " +
+        "`todos` + `filter` rather than stored separately, and that `TodoList`/`TodoItem` " +
+        "required no changes — filtering is entirely a derived-data concern owned by `App`.",
+    },
+
+    // ------------------------------------------------------------------
+    // d7-t5 — optimistic rename (the fourth CRUD write, with validation)
+    // ------------------------------------------------------------------
+    {
+      id: "d7-t5",
+      title: "Add optimistic rename with validation",
+      description:
+        "## Add optimistic rename with validation\n\n" +
+        "Three writes down (create/toggle/delete), one to go: **renaming** a " +
+        "todo's title in place. It follows the exact same optimistic-update-" +
+        "then-reconcile-or-rollback shape as every other mutation in this " +
+        "course — update local state first, `PUT` in the background, roll " +
+        "back only on failure — with one addition real apps need: **reject " +
+        "an empty rename** instead of optimistically saving blank text.\n\n" +
+        "`TodoItem` grows an edit affordance. Clicking \"Rename\" prompts for " +
+        "a new title (any input mechanism is fine — a `prompt()` call keeps " +
+        "this task focused on the state/network logic, not building a new " +
+        "inline-edit UI) and calls `onRename(todo.id, newTitle)`:\n\n" +
+        "```jsx\n" +
+        "function TodoItem({ todo, onToggle, onDelete, onRename }) {\n" +
+        "  function handleRenameClick() {\n" +
+        '    const next = window.prompt("Rename todo", todo.title);\n' +
+        "    if (next === null) return; // user cancelled\n" +
+        "    onRename(todo.id, next);\n" +
+        "  }\n\n" +
+        "  return (\n" +
+        '    <li className="todo-item">\n' +
+        "      {/* ...existing checkbox... */}\n" +
+        "      {todo.title}\n" +
+        "      <button onClick={handleRenameClick}>Rename</button>\n" +
+        "      {/* ...existing delete button... */}\n" +
+        "    </li>\n" +
+        "  );\n" +
+        "}\n" +
+        "```\n\n" +
+        "`App.handleRename` mirrors `handleToggle` exactly, but **validates " +
+        "first** — an empty/whitespace-only new title is rejected before any " +
+        "state update or network call happens at all (no optimistic update, " +
+        "no rollback needed, because nothing was ever applied):\n\n" +
+        "```jsx\n" +
+        "function handleRename(id, newTitle) {\n" +
+        "  const trimmed = newTitle.trim();\n" +
+        "  if (!trimmed) return; // reject blank renames outright\n\n" +
+        "  const previous = todos;\n" +
+        "  const next = todos.map((t) => (t.id === id ? { ...t, title: trimmed } : t));\n" +
+        "  setTodos(next);\n\n" +
+        "  fetch(`/api/todos/${id}`, {\n" +
+        '    method: "PUT",\n' +
+        '    headers: { "Content-Type": "application/json" },\n' +
+        "    body: JSON.stringify({ title: trimmed }),\n" +
+        "  }).catch(() => {\n" +
+        "    setTodos(previous);\n" +
+        "  });\n" +
+        "}\n" +
+        "```\n\n" +
+        "**Your job:** add `onRename`/`handleRenameClick` to `TodoItem.jsx` " +
+        "(threaded through `TodoList.jsx` exactly like `onToggle`/`onDelete` " +
+        "already are), add `handleRename` to `App.jsx` and wire it into " +
+        "`<TodoList onRenameTodo={handleRename} />`, AND implement two pure " +
+        "helpers in `view.js`:\n\n" +
+        "- `normalizeRename(newTitle)` — trims `newTitle` and returns " +
+        '`{ valid: false }` if the trimmed result is empty, otherwise ' +
+        '`{ valid: true, title: <trimmed> }`.\n' +
+        "- `applyOptimisticRename(todos, id, title)` — returns a **new** " +
+        "array with the matching todo's `title` replaced by the given " +
+        "(already-validated/trimmed) `title`. Must not mutate the input.",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day7-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "// TODO: accept an `onRename` prop. Add a \"Rename\" <button> that\n" +
+          '// prompts for a new title via window.prompt("Rename todo", todo.title)\n' +
+          "// and calls onRename(todo.id, next) if the user didn't cancel (next !== null).\n" +
+          "function TodoItem({ todo, onToggle, onDelete }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          '      <button onClick={() => onDelete(todo.id)}>Delete</button>\n' +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          "// TODO: accept an `onRenameTodo` prop and forward it to each TodoItem\n" +
+          "// as its `onRename` prop, alongside the existing onToggleTodo/onDeleteTodo.\n" +
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo, onDeleteTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem\n" +
+          "          key={todo.id}\n" +
+          "          todo={todo}\n" +
+          "          onToggle={onToggleTodo}\n" +
+          "          onDelete={onDeleteTodo}\n" +
+          "        />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n\n' +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleAdd(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, done: !t.done } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    const target = next.find((t) => t.id === id);\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: target.done }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleDelete(id) {\n" +
+          "    const previous = todos;\n" +
+          "    setTodos(todos.filter((t) => t.id !== id));\n\n" +
+          '    fetch(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {\n' +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  // TODO: add handleRename(id, newTitle) — validate via\n" +
+          "  // normalizeRename(newTitle), return early if invalid, else optimistic\n" +
+          '  // PUT /api/todos/:id with { title }, rolling back to the previous\n' +
+          "  // todos array on failure (same pattern as handleToggle/handleDelete).\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleAdd}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          "      {todos.length === 0 ? (\n" +
+          '        <p className="todo-status">\n' +
+          "          Nothing to do yet — add your first todo above!\n" +
+          "        </p>\n" +
+          "      ) : (\n" +
+          "        <TodoList\n" +
+          "          todos={todos}\n" +
+          "          onToggleTodo={handleToggle}\n" +
+          "          onDeleteTodo={handleDelete}\n" +
+          "          onRenameTodo={() => {}}\n" +
+          "        />\n" +
+          "      )}\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "// TODO: implement normalizeRename(newTitle) -> { valid: false } if the\n" +
+          "// trimmed title is empty, else { valid: true, title: <trimmed> }.\n" +
+          "export function normalizeRename(newTitle) {\n" +
+          "}\n\n" +
+          "// TODO: implement applyOptimisticRename(todos, id, title) -> new array,\n" +
+          "// matching todo's title replaced. Do not mutate input.\n" +
+          "export function applyOptimisticRename(todos, id, title) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`normalizeRename` is two lines: trim the input, then return `{ valid: false }` if the trimmed string's length is 0, otherwise `{ valid: true, title: trimmed }`.",
+        "`applyOptimisticRename` is a one-line `.map()`, same shape as `applyOptimisticToggle` from d7-t2 but replacing `title` instead of flipping `done`.",
+        "`handleRename` should call `normalizeRename` **before** touching `setTodos` at all — an invalid rename does nothing (no optimistic update, no rollback, no network call).",
+        "Thread `onRename`/`onRenameTodo` through `TodoItem`/`TodoList` exactly like `onDelete`/`onDeleteTodo` already were threaded in d7-t1 — same shape, new name, one more prop at each layer.",
+        '`window.prompt(...)` returns `null` when the user cancels the dialog — `handleRenameClick` must check for that and skip calling `onRename` entirely in that case, so cancelling never sends an empty rename.',
+      ],
+      hiddenTests: [
+        {
+          filename: "rename-helpers.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { normalizeRename, applyOptimisticRename } from "./view.js";\n\n' +
+            'test("normalizeRename trims whitespace and reports valid: true for non-empty input", () => {\n' +
+            '  expect(normalizeRename("  Buy milk  ")).toEqual({ valid: true, title: "Buy milk" });\n' +
+            "});\n\n" +
+            'test("normalizeRename reports valid: false for an empty string", () => {\n' +
+            '  expect(normalizeRename("").valid).toBe(false);\n' +
+            "});\n\n" +
+            'test("normalizeRename reports valid: false for a whitespace-only string", () => {\n' +
+            '  expect(normalizeRename("   ").valid).toBe(false);\n' +
+            "});\n\n" +
+            'test("applyOptimisticRename replaces only the matching todo\'s title", () => {\n' +
+            "  const todos = [\n" +
+            '    { id: 1, title: "Old", done: false },\n' +
+            '    { id: 2, title: "Other", done: true },\n' +
+            "  ];\n" +
+            '  const result = applyOptimisticRename(todos, 1, "New");\n' +
+            "  expect(result).toEqual([\n" +
+            '    { id: 1, title: "New", done: false },\n' +
+            '    { id: 2, title: "Other", done: true },\n' +
+            "  ]);\n" +
+            "});\n\n" +
+            'test("applyOptimisticRename does not mutate the original array", () => {\n' +
+            '  const todos = [{ id: 1, title: "Old", done: false }];\n' +
+            "  const original = JSON.parse(JSON.stringify(todos));\n" +
+            '  applyOptimisticRename(todos, 1, "New");\n' +
+            "  expect(todos).toEqual(original);\n" +
+            "});\n",
+        },
+        {
+          filename: "rename-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("TodoItem.jsx accepts onRename and prompts for a new title", async () => {\n' +
+            '  const jsx = await Bun.file("TodoItem.jsx").text();\n' +
+            "  expect(/onRename/.test(jsx)).toBe(true);\n" +
+            '  expect(/window\\.prompt\\(/.test(jsx)).toBe(true);\n' +
+            "});\n\n" +
+            'test("TodoItem.jsx calls onRename(todo.id, ...) and guards against a null prompt result", async () => {\n' +
+            '  const jsx = await Bun.file("TodoItem.jsx").text();\n' +
+            "  expect(/onRename\\(\\s*todo\\.id\\s*,/.test(jsx)).toBe(true);\n" +
+            "  expect(/=== null/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("TodoList.jsx forwards onRenameTodo to TodoItem\'s onRename prop", async () => {\n' +
+            '  const jsx = await Bun.file("TodoList.jsx").text();\n' +
+            "  expect(/onRename=\\{onRenameTodo\\}/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx defines handleRename and validates before mutating state", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/function handleRename/.test(jsx)).toBe(true);\n" +
+            '  expect(/normalizeRename\\(/.test(jsx)).toBe(true);\n' +
+            "  const renameBlock = jsx.slice(\n" +
+            '    jsx.indexOf("function handleRename"),\n' +
+            '    jsx.indexOf("if (status"),\n' +
+            "  );\n" +
+            '  expect(/valid/.test(renameBlock)).toBe(true);\n' +
+            "});\n\n" +
+            'test("App.jsx PUTs the renamed title to /api/todos/:id and rolls back on failure", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const renameBlock = jsx.slice(\n" +
+            '    jsx.indexOf("function handleRename"),\n' +
+            '    jsx.indexOf("if (status"),\n' +
+            "  );\n" +
+            '  expect(/method\\s*:\\s*["\']PUT["\']/.test(renameBlock)).toBe(true);\n' +
+            '  expect(/JSON\\.stringify\\(\\s*\\{\\s*title/.test(renameBlock)).toBe(true);\n' +
+            "  expect(/setTodos\\(\\s*previous\\s*\\)/.test(renameBlock)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx wires handleRename into TodoList as onRenameTodo", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/onRenameTodo=\\{handleRename\\}/.test(jsx)).toBe(true);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day7-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle, onDelete, onRename }) {\n" +
+          "  function handleRenameClick() {\n" +
+          '    const next = window.prompt("Rename todo", todo.title);\n' +
+          "    if (next === null) return;\n" +
+          "    onRename(todo.id, next);\n" +
+          "  }\n\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          "      <button onClick={handleRenameClick}>Rename</button>\n" +
+          '      <button onClick={() => onDelete(todo.id)}>Delete</button>\n' +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo, onDeleteTodo, onRenameTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem\n" +
+          "          key={todo.id}\n" +
+          "          todo={todo}\n" +
+          "          onToggle={onToggleTodo}\n" +
+          "          onDelete={onDeleteTodo}\n" +
+          "          onRename={onRenameTodo}\n" +
+          "        />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import { normalizeRename } from "./view.js";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n\n' +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleAdd(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, done: !t.done } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    const target = next.find((t) => t.id === id);\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: target.done }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleDelete(id) {\n" +
+          "    const previous = todos;\n" +
+          "    setTodos(todos.filter((t) => t.id !== id));\n\n" +
+          '    fetch(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {\n' +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleRename(id, newTitle) {\n" +
+          "    const result = normalizeRename(newTitle);\n" +
+          "    if (!result.valid) return;\n\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, title: result.title } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: result.title }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleAdd}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          "      {todos.length === 0 ? (\n" +
+          '        <p className="todo-status">\n' +
+          "          Nothing to do yet — add your first todo above!\n" +
+          "        </p>\n" +
+          "      ) : (\n" +
+          "        <TodoList\n" +
+          "          todos={todos}\n" +
+          "          onToggleTodo={handleToggle}\n" +
+          "          onDeleteTodo={handleDelete}\n" +
+          "          onRenameTodo={handleRename}\n" +
+          "        />\n" +
+          "      )}\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "view.js":
+          "export function normalizeRename(newTitle) {\n" +
+          "  const trimmed = newTitle.trim();\n" +
+          '  if (trimmed.length === 0) return { valid: false };\n' +
+          "  return { valid: true, title: trimmed };\n" +
+          "}\n\n" +
+          "export function applyOptimisticRename(todos, id, title) {\n" +
+          "  return todos.map((t) => (t.id === id ? { ...t, title } : t));\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm handleRename validates via normalizeRename BEFORE any state mutation or " +
+        "network call (an empty/whitespace rename does nothing at all, not even an optimistic " +
+        "update that then rolls back), that a valid rename follows the same optimistic-PUT-" +
+        "then-rollback-on-failure shape as handleToggle/handleDelete, and that onRename/" +
+        "onRenameTodo thread through TodoItem/TodoList the same way onDelete/onDeleteTodo did.",
+    },
+
+    // ------------------------------------------------------------------
+    // d7-t6 — ship it (v2): bulk "clear completed" + filter/count, final polish
+    // ------------------------------------------------------------------
+    {
+      id: "d7-t6",
+      title: "Ship it (v2): bulk-clear completed todos, filter and count wired together",
+      description:
+        "## Ship it (v2): bulk-clear completed todos, filter and count wired together\n\n" +
+        "This is the final capstone task. d7-t4 added filtering + a remaining-" +
+        "count, d7-t5 added rename. The last piece a finished to-do app needs " +
+        "is a **bulk action**: \"Clear completed\" — delete every `done: true` " +
+        "todo in one click, applying the *same* optimistic-update-then-" +
+        "rollback protocol used everywhere else in this course, just acting " +
+        "on multiple todos in a single optimistic update instead of one.\n\n" +
+        "```jsx\n" +
+        "function handleClearCompleted() {\n" +
+        "  const previous = todos;\n" +
+        "  const cleared = todos.filter((t) => t.done);\n" +
+        "  const next = todos.filter((t) => !t.done);\n" +
+        "  setTodos(next);\n\n" +
+        "  Promise.all(\n" +
+        '    cleared.map((t) => fetch(`/api/todos/${t.id}`, { method: "DELETE" })),\n' +
+        "  ).catch(() => {\n" +
+        "    setTodos(previous); // roll back the whole batch on any failure\n" +
+        "  });\n" +
+        "}\n" +
+        "```\n\n" +
+        "Render the button only when there's something to clear (no point " +
+        "showing \"Clear completed\" against an all-active list), right " +
+        "alongside d7-t4's filter buttons and remaining-count:\n\n" +
+        "```jsx\n" +
+        '<div className="todo-filters">\n' +
+        '  <button onClick={() => setFilter("all")}>All</button>\n' +
+        '  <button onClick={() => setFilter("active")}>Active</button>\n' +
+        '  <button onClick={() => setFilter("completed")}>Completed</button>\n' +
+        "  {hasCompleted && (\n" +
+        "    <button onClick={handleClearCompleted}>Clear completed</button>\n" +
+        "  )}\n" +
+        "</div>\n" +
+        '<p className="todo-count">{remainingCount} items left</p>\n' +
+        "```\n\n" +
+        "Everything from d7-t1 through d7-t5 keeps working exactly as it was " +
+        "— the composition tree, fetch-on-mount, create/toggle/delete/rename " +
+        "all optimistic with rollback, the empty state, and the All/Active/" +
+        "Completed filter with its derived count. This task adds the last " +
+        "missing action and nothing else — the true \"ship it\" version of " +
+        "the capstone.\n\n" +
+        "**Your job:** add `handleClearCompleted` to `App.jsx` and render the " +
+        "conditional \"Clear completed\" button next to the existing filter " +
+        "buttons (gated on there being at least one completed todo), AND " +
+        "implement two pure helpers in `view.js`:\n\n" +
+        "- `hasCompletedTodos(todos)` — returns `true` if at least one todo " +
+        "has `done === true`, otherwise `false`.\n" +
+        "- `clearCompleted(todos)` — returns a **new** array containing only " +
+        "the todos where `done === false` (i.e. every completed todo " +
+        "removed). Must not mutate the input.",
+      starterCode: {
+        "package.json":
+          "{\n" +
+          '  "name": "day7-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import { filterTodos, countRemaining } from "./view.js";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n' +
+          '  const [filter, setFilter] = useState("all");\n\n' +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleAdd(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, done: !t.done } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    const target = next.find((t) => t.id === id);\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: target.done }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleDelete(id) {\n" +
+          "    const previous = todos;\n" +
+          "    setTodos(todos.filter((t) => t.id !== id));\n\n" +
+          '    fetch(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {\n' +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  // TODO: add handleClearCompleted() — optimistically remove every\n" +
+          "  // done: true todo via setTodos, DELETE each cleared todo's id via\n" +
+          "  // Promise.all, rolling back to the previous todos array on any failure.\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  const visibleTodos = filterTodos(todos, filter);\n" +
+          "  const remainingCount = countRemaining(todos);\n" +
+          "  // TODO: compute hasCompleted via hasCompletedTodos(todos) and use it\n" +
+          '  // to conditionally render a "Clear completed" button next to the\n' +
+          "  // existing filter buttons.\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleAdd}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          '      <div className="todo-filters">\n' +
+          '        <button onClick={() => setFilter("all")}>All</button>\n' +
+          '        <button onClick={() => setFilter("active")}>Active</button>\n' +
+          '        <button onClick={() => setFilter("completed")}>Completed</button>\n' +
+          "      </div>\n" +
+          '      <p className="todo-count">{remainingCount} items left</p>\n' +
+          "      {todos.length === 0 ? (\n" +
+          '        <p className="todo-status">\n' +
+          "          Nothing to do yet — add your first todo above!\n" +
+          "        </p>\n" +
+          "      ) : (\n" +
+          "        <TodoList\n" +
+          "          todos={visibleTodos}\n" +
+          "          onToggleTodo={handleToggle}\n" +
+          "          onDeleteTodo={handleDelete}\n" +
+          "        />\n" +
+          "      )}\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo, onDeleteTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem\n" +
+          "          key={todo.id}\n" +
+          "          todo={todo}\n" +
+          "          onToggle={onToggleTodo}\n" +
+          "          onDelete={onDeleteTodo}\n" +
+          "        />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle, onDelete }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          '      <button onClick={() => onDelete(todo.id)}>Delete</button>\n' +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "view.js":
+          "export function filterTodos(todos, filter) {\n" +
+          '  if (filter === "active") return todos.filter((t) => !t.done);\n' +
+          '  if (filter === "completed") return todos.filter((t) => t.done);\n' +
+          "  return [...todos];\n" +
+          "}\n\n" +
+          "export function countRemaining(todos) {\n" +
+          "  return todos.filter((t) => !t.done).length;\n" +
+          "}\n\n" +
+          "// TODO: implement hasCompletedTodos(todos) -> true if at least one\n" +
+          "// todo has done === true.\n" +
+          "export function hasCompletedTodos(todos) {\n" +
+          "}\n\n" +
+          "// TODO: implement clearCompleted(todos) -> new array with every\n" +
+          "// done === true todo removed. Do not mutate input.\n" +
+          "export function clearCompleted(todos) {\n" +
+          "}\n",
+      },
+      hints: [
+        "`hasCompletedTodos` is `todos.some((t) => t.done)` — one line.",
+        "`clearCompleted` is `todos.filter((t) => !t.done)` — the same filter d7-t4's `countRemaining` uses internally, just returning the array instead of a count.",
+        "`handleClearCompleted` captures `previous = todos` and the list of `cleared` todos (the ones about to be removed) **before** calling `setTodos`, so it can both roll back state and know which ids to `DELETE` on the server.",
+        "`Promise.all([...]).catch(...)` rolls back once if **any** of the batched `DELETE` requests fails — same all-or-nothing rollback semantics as a single mutation, just covering a batch.",
+        'Gate the "Clear completed" button on `hasCompletedTodos(todos)` (the **full** list, not the filtered `visibleTodos`) so it appears/disappears correctly regardless of which filter tab is currently selected.',
+      ],
+      hiddenTests: [
+        {
+          filename: "clear-completed-helpers.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n' +
+            'import { hasCompletedTodos, clearCompleted } from "./view.js";\n\n' +
+            'test("hasCompletedTodos returns true when at least one todo is done", () => {\n' +
+            "  expect(\n" +
+            "    hasCompletedTodos([\n" +
+            '      { id: 1, title: "A", done: false },\n' +
+            '      { id: 2, title: "B", done: true },\n' +
+            "    ]),\n" +
+            "  ).toBe(true);\n" +
+            "});\n\n" +
+            'test("hasCompletedTodos returns false when no todos are done", () => {\n' +
+            '  expect(hasCompletedTodos([{ id: 1, title: "A", done: false }])).toBe(false);\n' +
+            "  expect(hasCompletedTodos([])).toBe(false);\n" +
+            "});\n\n" +
+            'test("clearCompleted removes every done todo, keeping active ones", () => {\n' +
+            "  const todos = [\n" +
+            '    { id: 1, title: "A", done: false },\n' +
+            '    { id: 2, title: "B", done: true },\n' +
+            '    { id: 3, title: "C", done: true },\n' +
+            "  ];\n" +
+            "  const result = clearCompleted(todos);\n" +
+            '  expect(result).toEqual([{ id: 1, title: "A", done: false }]);\n' +
+            "});\n\n" +
+            'test("clearCompleted does not mutate the original array", () => {\n' +
+            '  const todos = [{ id: 1, title: "A", done: true }];\n' +
+            "  const original = JSON.parse(JSON.stringify(todos));\n" +
+            "  clearCompleted(todos);\n" +
+            "  expect(todos).toEqual(original);\n" +
+            "});\n\n" +
+            'test("clearCompleted returns an equivalent array when nothing is completed", () => {\n' +
+            '  const todos = [{ id: 1, title: "A", done: false }];\n' +
+            "  expect(clearCompleted(todos)).toEqual(todos);\n" +
+            "});\n",
+        },
+        {
+          filename: "ship-v2-shape.test.ts",
+          contents:
+            'import { expect, test } from "bun:test";\n\n' +
+            'test("App.jsx defines handleClearCompleted using Promise.all for the batch DELETE", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/function handleClearCompleted/.test(jsx)).toBe(true);\n" +
+            '  expect(/Promise\\.all\\(/.test(jsx)).toBe(true);\n' +
+            '  expect(/method\\s*:\\s*["\']DELETE["\']/.test(jsx)).toBe(true);\n' +
+            "});\n\n" +
+            'test("handleClearCompleted rolls back to the previous todos array on failure", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  const block = jsx.slice(\n" +
+            '    jsx.indexOf("function handleClearCompleted"),\n' +
+            '    jsx.indexOf("if (status"),\n' +
+            "  );\n" +
+            "  expect(/setTodos\\(\\s*previous\\s*\\)/.test(block)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx conditionally renders a Clear completed button based on hasCompletedTodos", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            '  expect(/hasCompletedTodos\\(/.test(jsx)).toBe(true);\n' +
+            "  expect(/Clear completed/.test(jsx)).toBe(true);\n" +
+            "  expect(/onClick=\\{handleClearCompleted\\}/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx still has the d7-t4 filter buttons and remaining count intact", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/>All</.test(jsx)).toBe(true);\n" +
+            "  expect(/>Active</.test(jsx)).toBe(true);\n" +
+            "  expect(/>Completed</.test(jsx)).toBe(true);\n" +
+            '  expect(/countRemaining\\(/.test(jsx)).toBe(true);\n' +
+            "  expect(/items left/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx retains all prior CRUD handlers (add/toggle/delete) unmodified in name", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/function handleAdd/.test(jsx)).toBe(true);\n" +
+            "  expect(/function handleToggle/.test(jsx)).toBe(true);\n" +
+            "  expect(/function handleDelete/.test(jsx)).toBe(true);\n" +
+            "});\n\n" +
+            'test("App.jsx has zero manual DOM operations in the final shipped app", async () => {\n' +
+            '  const jsx = await Bun.file("App.jsx").text();\n' +
+            "  expect(/document\\.createElement/.test(jsx)).toBe(false);\n" +
+            "  expect(/innerHTML/.test(jsx)).toBe(false);\n" +
+            "});\n",
+        },
+      ],
+      solution: {
+        "package.json":
+          "{\n" +
+          '  "name": "day7-app",\n' +
+          '  "private": true,\n' +
+          '  "dependencies": {\n' +
+          '    "react": "^18.3.1",\n' +
+          '    "react-dom": "^18.3.1"\n' +
+          "  }\n" +
+          "}\n",
+        "App.jsx":
+          'import { useState, useEffect } from "react";\n' +
+          'import TodoList from "./TodoList.jsx";\n' +
+          'import { filterTodos, countRemaining, hasCompletedTodos } from "./view.js";\n\n' +
+          "export default function App() {\n" +
+          '  const [status, setStatus] = useState("loading");\n' +
+          "  const [todos, setTodos] = useState([]);\n" +
+          '  const [input, setInput] = useState("");\n' +
+          '  const [filter, setFilter] = useState("all");\n\n' +
+          "  useEffect(() => {\n" +
+          '    fetch("/api/todos")\n' +
+          "      .then((response) => {\n" +
+          '        if (!response.ok) throw new Error("bad response");\n' +
+          "        return response.json();\n" +
+          "      })\n" +
+          "      .then((data) => {\n" +
+          "        setTodos(data);\n" +
+          '        setStatus("ready");\n' +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          '        setStatus("error");\n' +
+          "      });\n" +
+          "  }, []);\n\n" +
+          "  function handleAdd(event) {\n" +
+          "    event.preventDefault();\n" +
+          "    const value = input.trim();\n" +
+          "    if (!value) return;\n\n" +
+          '    const tempId = "temp-" + Date.now();\n' +
+          "    setTodos((current) => [\n" +
+          "      ...current,\n" +
+          "      { id: tempId, title: value, done: false },\n" +
+          "    ]);\n" +
+          '    setInput("");\n\n' +
+          '    fetch("/api/todos", {\n' +
+          '      method: "POST",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ title: value }),\n" +
+          "    })\n" +
+          "      .then((response) => response.json())\n" +
+          "      .then((realTodo) => {\n" +
+          "        setTodos((current) =>\n" +
+          "          current.map((t) => (t.id === tempId ? realTodo : t)),\n" +
+          "        );\n" +
+          "      })\n" +
+          "      .catch(() => {\n" +
+          "        setTodos((current) => current.filter((t) => t.id !== tempId));\n" +
+          "      });\n" +
+          "  }\n\n" +
+          "  function handleToggle(id) {\n" +
+          "    const previous = todos;\n" +
+          "    const next = todos.map((t) =>\n" +
+          "      t.id === id ? { ...t, done: !t.done } : t,\n" +
+          "    );\n" +
+          "    setTodos(next);\n\n" +
+          "    const target = next.find((t) => t.id === id);\n" +
+          "    fetch(`/api/todos/${id}`, {\n" +
+          '      method: "PUT",\n' +
+          '      headers: { "Content-Type": "application/json" },\n' +
+          "      body: JSON.stringify({ done: target.done }),\n" +
+          "    }).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleDelete(id) {\n" +
+          "    const previous = todos;\n" +
+          "    setTodos(todos.filter((t) => t.id !== id));\n\n" +
+          '    fetch(`/api/todos/${id}`, { method: "DELETE" }).catch(() => {\n' +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          "  function handleClearCompleted() {\n" +
+          "    const previous = todos;\n" +
+          "    const cleared = todos.filter((t) => t.done);\n" +
+          "    const next = todos.filter((t) => !t.done);\n" +
+          "    setTodos(next);\n\n" +
+          "    Promise.all(\n" +
+          "      cleared.map((t) =>\n" +
+          '        fetch(`/api/todos/${t.id}`, { method: "DELETE" }),\n' +
+          "      ),\n" +
+          "    ).catch(() => {\n" +
+          "      setTodos(previous);\n" +
+          "    });\n" +
+          "  }\n\n" +
+          '  if (status === "loading") {\n' +
+          '    return <p className="todo-status">Loading…</p>;\n' +
+          "  }\n\n" +
+          '  if (status === "error") {\n' +
+          '    return <p className="todo-status">Failed to load todos.</p>;\n' +
+          "  }\n\n" +
+          "  const visibleTodos = filterTodos(todos, filter);\n" +
+          "  const remainingCount = countRemaining(todos);\n" +
+          "  const hasCompleted = hasCompletedTodos(todos);\n\n" +
+          "  return (\n" +
+          "    <>\n" +
+          "      <form onSubmit={handleAdd}>\n" +
+          "        <input\n" +
+          "          value={input}\n" +
+          "          onChange={(event) => setInput(event.target.value)}\n" +
+          "        />\n" +
+          '        <button type="submit">Add</button>\n' +
+          "      </form>\n" +
+          '      <div className="todo-filters">\n' +
+          '        <button onClick={() => setFilter("all")}>All</button>\n' +
+          '        <button onClick={() => setFilter("active")}>Active</button>\n' +
+          '        <button onClick={() => setFilter("completed")}>Completed</button>\n' +
+          "        {hasCompleted && (\n" +
+          "          <button onClick={handleClearCompleted}>Clear completed</button>\n" +
+          "        )}\n" +
+          "      </div>\n" +
+          '      <p className="todo-count">{remainingCount} items left</p>\n' +
+          "      {todos.length === 0 ? (\n" +
+          '        <p className="todo-status">\n' +
+          "          Nothing to do yet — add your first todo above!\n" +
+          "        </p>\n" +
+          "      ) : (\n" +
+          "        <TodoList\n" +
+          "          todos={visibleTodos}\n" +
+          "          onToggleTodo={handleToggle}\n" +
+          "          onDeleteTodo={handleDelete}\n" +
+          "        />\n" +
+          "      )}\n" +
+          "    </>\n" +
+          "  );\n" +
+          "}\n",
+        "TodoList.jsx":
+          'import TodoItem from "./TodoItem.jsx";\n\n' +
+          "function TodoList({ todos, onToggleTodo, onDeleteTodo }) {\n" +
+          "  return (\n" +
+          "    <ul>\n" +
+          "      {todos.map((todo) => (\n" +
+          "        <TodoItem\n" +
+          "          key={todo.id}\n" +
+          "          todo={todo}\n" +
+          "          onToggle={onToggleTodo}\n" +
+          "          onDelete={onDeleteTodo}\n" +
+          "        />\n" +
+          "      ))}\n" +
+          "    </ul>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoList;\n",
+        "TodoItem.jsx":
+          "function TodoItem({ todo, onToggle, onDelete }) {\n" +
+          "  return (\n" +
+          '    <li className="todo-item">\n' +
+          "      <input\n" +
+          '        type="checkbox"\n' +
+          "        checked={todo.done}\n" +
+          "        onChange={() => onToggle(todo.id)}\n" +
+          "      />\n" +
+          "      {todo.title}\n" +
+          '      <button onClick={() => onDelete(todo.id)}>Delete</button>\n' +
+          "    </li>\n" +
+          "  );\n" +
+          "}\n\n" +
+          "export default TodoItem;\n",
+        "view.js":
+          "export function filterTodos(todos, filter) {\n" +
+          '  if (filter === "active") return todos.filter((t) => !t.done);\n' +
+          '  if (filter === "completed") return todos.filter((t) => t.done);\n' +
+          "  return [...todos];\n" +
+          "}\n\n" +
+          "export function countRemaining(todos) {\n" +
+          "  return todos.filter((t) => !t.done).length;\n" +
+          "}\n\n" +
+          "export function hasCompletedTodos(todos) {\n" +
+          "  return todos.some((t) => t.done);\n" +
+          "}\n\n" +
+          "export function clearCompleted(todos) {\n" +
+          "  return todos.filter((t) => !t.done);\n" +
+          "}\n",
+      },
+      evalPrompt:
+        "Confirm handleClearCompleted captures the previous todos array and the specific " +
+        "cleared batch before the optimistic setTodos call, that the batch DELETE uses " +
+        "Promise.all with an all-or-nothing rollback, that the Clear completed button only " +
+        "renders when hasCompletedTodos(todos) is true, and that every earlier d7 feature " +
+        "(composition tree, fetch-on-mount, create/toggle/delete/rename, empty state, filter " +
+        "+ count) remains intact and correct — this is the final, fully-shipped capstone app.",
     },
   ],
 };
