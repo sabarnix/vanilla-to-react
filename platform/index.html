@@ -10,12 +10,13 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23FF5A2D'/%3E%3Cpath d='M4 13.5V8a4 4 0 0 1 8 0v5.5' fill='%230c0b0a'/%3E%3C/svg%3E"
     />
     <link rel="stylesheet" href="./src/ui/styles.css" />
+    <link rel="stylesheet" href="./src/ui/course.css" />
     <script type="module" src="./src/ui/main.tsx"></script>
   </head>
   <body>
     <noscript>Vanilla to React needs JavaScript — everything here runs in your tab.</noscript>
 
-    <div id="app" data-mview="editor">
+    <div id="app" data-mview="editor" data-mode="course">
       <!-- ── top: brand + run transport ─────────────────────────────── -->
       <header id="topbar">
         <div class="brand">
@@ -27,13 +28,14 @@
           <span class="tagline">learn React by building · everything runs in your tab</span>
         </div>
         <div class="transport">
+          <button class="mode-toggle" id="mode-toggle" type="button" title="switch between the course and the raw sandbox editor">course ⇄ sandbox</button>
           <span class="led" id="run-led" title="runner idle"></span>
           <button class="t-btn t-run" id="btn-run" disabled>▸ run</button>
           <button class="t-btn t-stop" id="btn-stop" disabled>■ stop</button>
         </div>
       </header>
 
-      <!-- ── left: file tree ────────────────────────────────────────── -->
+      <!-- ── left: file tree (sandbox mode) / course nav (course mode) ── -->
       <aside id="sidebar">
         <div class="pane-label">
           <span>files</span>
@@ -44,28 +46,32 @@
           </span>
         </div>
         <div id="file-tree" role="tree" aria-label="workspace files"></div>
+        <div id="course-nav" aria-label="course days and tasks"></div>
       </aside>
 
       <div class="rz rz-v" id="rz-left" title="drag to resize · double-click to reset"></div>
 
-      <!-- ── center: editor ─────────────────────────────────────────── -->
+      <!-- ── center: editor (real editor; course overview overlays it until a task is entered) ── -->
       <main id="editor-pane">
         <div id="editor-tabs" role="tablist" aria-label="open files"></div>
         <div id="editor-body">
           <div id="editor-host"></div>
           <div id="editor-empty" class="empty">Nothing open yet. Pick a file from the tree, or type <code>edit index.ts</code> in the terminal.</div>
+          <div id="course-overview" hidden></div>
         </div>
       </main>
 
       <div class="rz rz-v" id="rz-right" title="drag to resize · double-click to reset"></div>
 
-      <!-- ── right: ai / diff (ai is the default tab) ───────────────── -->
+      <!-- ── right: task / ai / diff (task is the course-mode default tab) ── -->
       <aside id="rightbar">
         <nav class="tabbar" id="right-tabs">
+          <button class="tab" data-tab="task">task</button>
           <button class="tab" data-tab="ai">ai</button>
           <button class="tab" data-tab="diff">diff <span class="cnt" id="diff-count" hidden></span></button>
         </nav>
         <div class="panels" id="right-panels">
+          <section class="panel" data-panel="task" id="task-panel" hidden></section>
           <section class="panel" data-panel="diff" id="diff-panel" hidden>
             <div id="diff-files"></div>
             <div id="diff-head" hidden>
@@ -83,13 +89,14 @@
 
       <div class="rz rz-h" id="rz-bottom" title="drag to resize · double-click to reset"></div>
 
-      <!-- ── bottom: terminal / console / preview ───────────────────── -->
+      <!-- ── bottom: terminal / console / preview / test results ─────── -->
       <section id="bottombar">
         <nav class="tabbar" id="bottom-tabs">
           <button class="tab" data-tab="terminal">terminal</button>
           <button class="tab" data-tab="console">console</button>
           <button class="tab" data-tab="preview">preview</button>
           <button class="tab" data-tab="api">api</button>
+          <button class="tab" data-tab="tests">tests</button>
         </nav>
         <div class="panels" id="bottom-panels">
           <section class="panel" data-panel="terminal" id="terminal-panel"><div id="terminal"></div></section>
@@ -101,6 +108,9 @@
             <div id="console-scroll"></div>
           </section>
           <section class="panel" data-panel="api" id="api-panel" hidden></section>
+          <section class="panel" data-panel="tests" id="test-results-panel" hidden>
+            <div class="empty" id="test-results-empty">Press "run" in the task panel to see results here.</div>
+          </section>
           <section class="panel" data-panel="preview" id="preview-panel" hidden>
             <div class="pane-toolbar">
               <span class="url">/preview/</span>

@@ -36,6 +36,7 @@ import { initPreview } from "./preview.ts";
 import { initApiTester } from "./apitester.ts";
 import { initResizers } from "./layout.ts";
 import { initMobileNav } from "./mobile.ts";
+import { initCourse } from "./course.ts";
 
 const degraded: string[] = [];
 
@@ -81,7 +82,11 @@ async function boot(): Promise<void> {
     newDir: must("tree-new-dir"),
   });
 
-  const rightTabs = initTabs(must("right-tabs"), must("right-panels"), "ai");
+  // Course mode (the boot default — see index.html's #app[data-mode]) opens
+  // on the "task" rightbar tab so the description/hints/run controls are the
+  // first thing a learner sees; sandbox mode keeps the original "ai" default.
+  const bootMode = must("app").dataset["mode"] === "sandbox" ? "sandbox" : "course";
+  const rightTabs = initTabs(must("right-tabs"), must("right-panels"), bootMode === "course" ? "task" : "ai");
   const bottomTabs = initTabs(must("bottom-tabs"), must("bottom-panels"), "terminal");
 
   initDiffPanel({
@@ -122,6 +127,21 @@ async function boot(): Promise<void> {
 
   initResizers(must("app"));
   initMobileNav(must("app"), must("mobile-nav"));
+
+  // Course-mode orchestration (ADR-0005): wired AFTER every real panel above
+  // is up, since it drives them (real editor, real VFS, the new "task"
+  // rightbar panel, the "tests" bottombar panel). Resilient boot: a failure
+  // here only degrades course mode (the banner below reports it) — the
+  // sandbox/editor experience underneath is unaffected either way.
+  step("course", () =>
+    initCourse(must("app"), {
+      sidebar: must("course-nav"),
+      overviewHost: must("course-overview"),
+      taskPanel: must("task-panel"),
+      testResults: must("test-results-panel"),
+      modeToggle: must("mode-toggle") as HTMLButtonElement,
+    }),
+  );
 
   // Land on the rendered README (tab state isn't persisted, so every load
   // starts empty — the README is the front door). Skipped if something is
