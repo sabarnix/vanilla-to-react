@@ -1,9 +1,10 @@
 /**
  * Burrow src/course/content — content index.
  *
- * Exports the authored Days in course order. Later day-content tickets
- * (T9: Day 3-4, T10: Day 5-6, T11: Day 7) append their Day objects to this
- * same array, in order, following this exact shape:
+ * Exports the authored Days in course order. Day 1-2 (T8) and Day 3-4 (T9)
+ * are appended here; future day-content tickets (T10: Day 5-6, T11: Day 7)
+ * append their Day objects to this same array, in order, following this
+ * exact shape:
  *
  *   export const days: Day[] = [day1, day2, day3, day4, ...];
  *
@@ -15,8 +16,10 @@
 
 import { day1 } from "./day1.ts";
 import { day2 } from "./day2.ts";
+import { day3 } from "./day3.ts";
+import { day4 } from "./day4.ts";
 
-export { day1, day2 };
+export { day1, day2, day3, day4 };
 
 /** Ordered Days for the course, in display order. Append future days here. */
-export const days = [day1, day2];
+export const days = [day1, day2, day3, day4];
