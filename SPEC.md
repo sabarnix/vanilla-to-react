@@ -16,7 +16,11 @@ The goal is an **interactive platform** where a learner:
 4. Progresses through **Days → Tasks**, with progress saved.
 
 We build this by **forking Burrow** (the framework, Workstream A) and
-**authoring 42 tasks** of content against a shared schema (Workstream B).
+**authoring 21 tasks** (3/day × 7 days) of content against a shared schema (Workstream B).
+
+> **Note (2026-08-03):** earlier drafts said "42 tasks" — that was an early
+> estimate. Actual authored + QA'd scope is **21 tasks** (7 days × 3). See
+> ADR-0003.
 
 ### Framework Base — Burrow (`dhravya/burrow`, MIT) — see ADR-0001
 
@@ -58,7 +62,7 @@ We build this by **forking Burrow** (the framework, Workstream A) and
 | Workstream | Epic | Owner surface | Depends on |
 |------------|------|---------------|------------|
 | **A — Framework** | [#1] | The BrowserCode fork + runtime | — |
-| **B — Content** | [#2] | 42 authored tasks across 7 days | Schema seam (#4) |
+| **B — Content** | [#2] | 21 authored tasks across 7 days | Schema seam (#4) |
 
 The **seam** between them is the **course-content schema** (defined in #4).
 Once that contract is frozen, both workstreams proceed in parallel.
@@ -70,7 +74,7 @@ Once that contract is frozen, both workstreams proceed in parallel.
 ```
 Course
  └── Day (×7)
-      └── Task (×N)   ← 42 tasks total
+      └── Task (×N)   ← 21 tasks total (3/day × 7)
            ├── description   (markdown)
            ├── starterCode   (files the learner starts from)
            ├── hints[]       (progressive)
@@ -125,7 +129,7 @@ Foundational split (already published):
 | T9 | Author Day 3–4 (the pain → why React) | T8 |
 | T10 | Author Day 5–6 (components, props, hooks) | T9 |
 | T11 | Author Day 7 (capstone: ship a React app) | T10 |
-| T12 | Content QA: run all 42 tasks through the framework | T7, T11 |
+| T12 | Content QA: run all 21 tasks through the framework | T7, T11 |
 
 ### Critical path
 
@@ -164,11 +168,24 @@ work against. Because Burrow has no raw TCP and no native addons, we run the DB
 
 ## 8. Definition of Done (platform-level)
 
-- [ ] Framework boots, loads any valid course (schema-driven).
-- [ ] All 42 tasks authored and passing their own hidden tests.
-- [ ] Progress persists across reloads.
-- [ ] Deployed to a public URL.
-- [ ] A first-time learner can complete Day 1 with zero setup.
+_Status as of 2026-08-03 (all 13 tickets T1a–T12 landed; suite 635 pass / 1
+pre-existing unrelated fail):_
+
+- [x] Framework boots, loads any valid course (schema-driven). — Burrow baseline
+  (T1a #3) + schema/validator (T1b #4); boots over Tailscale.
+- [x] All **21** tasks authored and passing their own hidden tests. — T8–T11;
+  QA gate T12 (#15) verified 21/21 (solution=PASS, starter=FAIL). See
+  `platform/src/course/content/QA-REPORT.md`.
+- [x] Progress persists across reloads. — T5 (#8), localStorage store.
+- [~] Deployed to a public URL. — CI pipeline built (T7 #10, GitHub Pages);
+  **owner must enable Pages + push the branch** to go live. Currently reachable
+  on the tailnet only.
+- [ ] A first-time learner can complete Day 1 with zero setup. — **pending:** the
+  course shell is not yet mounted as Burrow's landing page (no ticket covered
+  replacing the stock home UI). Next natural ticket.
+
+> Task-count correction (42 → 21) and the test-harness runtime decision are
+> recorded in **ADR-0003**.
 
 ---
 
