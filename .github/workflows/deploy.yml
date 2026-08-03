@@ -1,0 +1,70 @@
+# Vanilla to React — build once, deploy to GitHub Pages on every push to the
+# default branch (master).
+#
+#   GitHub Pages (actions/deploy-pages) — plain static hosting, no server;
+#   /git-proxy (live git clone/push) and the preview service worker are
+#   unavailable there, but the core editor + hidden-test course experience
+#   works with zero setup. Built with BASE_PATH=/vanilla-to-react so the
+#   bun.wasm transpiler + AI worker resolve under the project-page subpath
+#   (see platform/build.ts's header comment for what BASE_PATH does/doesn't fix).
+#
+#   One-time repo setup (admin): Settings → Pages → Build and deployment →
+#   Source: "GitHub Actions". See platform/DEPLOY.md.
+#
+# NOTE: this workflow lives at the REPO ROOT (.github/workflows/) — GitHub only
+# runs workflows from there, not from platform/.github/. The platform/ copy is
+# kept as vendored reference only.
+name: deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Least-privilege default; the pages job elevates its own permissions below.
+permissions:
+  contents: read
+
+# Allow one concurrent deployment; newer pushes cancel in-progress runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: platform
+      - run: bun test
+        working-directory: platform
+
+  deploy-pages:
+    needs: test
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        working-directory: platform
+      # Project page (sabarnix.github.io/vanilla-to-react/) is served under a
+      # subpath — BASE_PATH rewrites the bun.wasm + AI worker URLs so they
+      # resolve there (the SW-based preview and /git-proxy remain root-only and
+      # are unavailable on Pages either way).
+      - run: BASE_PATH=/vanilla-to-react bun run build.ts
+        working-directory: platform
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: platform/dist
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -1,3 +1,8 @@
+# ⚠️ DORMANT / REFERENCE ONLY. GitHub runs workflows only from the REPO ROOT
+# (.github/workflows/deploy.yml) — this platform/ copy has never executed. The
+# live Pages deploy lives at the repo root. This file is kept for the Cloudflare
+# Workers reference (needs a CLOUDFLARE_API_TOKEN secret that is not set).
+#
 # Burrow — build once, deploy to two static targets on every push to the
 # default branch (master):
 #   1. Cloudflare Workers (worker.ts: git CORS proxy + asset serving) — the
