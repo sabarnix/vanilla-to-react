@@ -102,7 +102,7 @@ const BURROW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="
   <path d="M24 122 H 196" stroke="#3d3629" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
   <path d="M446 122 H 496" stroke="#3d3629" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
   <!-- wordmark -->
-  <text x="208" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" fill="#ece3d2">burrow</text>
+  <text x="208" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" fill="#ece3d2">zero to react</text>
   <text x="210" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">a dev machine in a browser tab</text>
   <text x="210" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">phones home to nobody</text>
 </svg>

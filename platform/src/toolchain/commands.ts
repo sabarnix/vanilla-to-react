@@ -53,7 +53,7 @@ const UNSUPPORTED_SUBCOMMANDS = new Set([
   "repl",
 ]);
 
-const BUN_USAGE = `${C.bold}Burrow${C.reset} — a slice of bun, in your tab
+const BUN_USAGE = `${C.bold}Zero to React${C.reset} — a slice of bun, in your tab
 
 ${C.bold}usage:${C.reset}
    ${C.cyan}bun run${C.reset} <file>      transpile + execute a module graph in a worker
