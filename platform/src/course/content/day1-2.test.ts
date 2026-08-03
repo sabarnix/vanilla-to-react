@@ -123,8 +123,8 @@ describe("Day 1 + Day 2 — schema validity", () => {
 });
 
 describe("Day 1 — task count and titles", () => {
-  test("day1 has 3 tasks", () => {
-    expect(day1.tasks.length).toBe(3);
+  test("day1 has 6 tasks", () => {
+    expect(day1.tasks.length).toBe(6);
   });
 
   test("day1 task titles", () => {
@@ -132,13 +132,16 @@ describe("Day 1 — task count and titles", () => {
       "Build the to-do list markup",
       "Style the to-do list",
       "Read the DOM: count your to-dos",
+      "Add an accessible new-to-do form",
+      "Lay out a to-do row with flexbox",
+      "Read the DOM: report the first and last to-do",
     ]);
   });
 });
 
 describe("Day 2 — task count and titles", () => {
-  test("day2 has 3 tasks", () => {
-    expect(day2.tasks.length).toBe(3);
+  test("day2 has 6 tasks", () => {
+    expect(day2.tasks.length).toBe(6);
   });
 
   test("day2 task titles", () => {
@@ -146,6 +149,9 @@ describe("Day 2 — task count and titles", () => {
       "Add a to-do with an event listener",
       "Toggle a to-do as done",
       "Delete a to-do (and fix the state/DOM desync bug)",
+      "Edit a to-do's text in place",
+      "Filter to-dos: All, Active, Completed",
+      "Clear completed to-dos in one batch mutation",
     ]);
   });
 });
