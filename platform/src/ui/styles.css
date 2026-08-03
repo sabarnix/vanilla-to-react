@@ -1,7 +1,7 @@
 /* ============================================================================
-   Burrow — a dev machine in one tab.  (src/ui owns this file)
+   Vanilla to React — dev sandbox chrome.  (src/ui owns this file)
 
-   Design language: warm graphite dark, one baked-amber accent (#f2a34c),
+   Design language: warm graphite dark, one OpenClaw-red accent (#FF5A2D),
    monospace everywhere, a 4/8px grid, hairline borders. No gradients-as-
    decoration, no drop shadows on flat panels — depth comes from value steps
    and one-pixel lines. Every pane scrolls inside itself; the page never does.
@@ -30,11 +30,12 @@
   --line2: #2e2920;
   --line3: #3d3629;
 
-  /* the one accent + supporting signal hues */
-  --acc: #f2a34c;
-  --acc-hi: #ffc27a;
-  --acc-dim: rgba(242, 163, 76, 0.14);
-  --acc-line: rgba(242, 163, 76, 0.42);
+  /* the one accent + supporting signal hues (OpenClaw red — see ADR-0004) */
+  --acc-rgb: 255, 90, 45;   /* channel var: rgba(var(--acc-rgb), <a>) for tints */
+  --acc: #FF5A2D;
+  --acc-hi: #FF7A3D;
+  --acc-dim: rgba(var(--acc-rgb), 0.14);
+  --acc-line: rgba(var(--acc-rgb), 0.42);
 
   --ok: #b3c186;
   --info: #82b8d8;
@@ -47,7 +48,7 @@
   --term-bg: transparent;
   --term-fg: var(--fg0);
   --term-cursor: var(--acc);
-  --term-selection: rgba(242, 163, 76, 0.22);
+  --term-selection: rgba(var(--acc-rgb), 0.22);
 
   /* resizable pane sizes (driven by src/ui/layout.ts) */
   --sidebar-w: 248px;
@@ -82,7 +83,7 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   /* barely-there warm top glow so the flat dark has a light source */
-  background-image: radial-gradient(120% 60% at 50% -10%, rgba(242, 163, 76, 0.05), transparent 60%);
+  background-image: radial-gradient(120% 60% at 50% -10%, rgba(var(--acc-rgb), 0.05), transparent 60%);
 }
 button {
   font: inherit;
@@ -96,7 +97,7 @@ a {
   text-decoration: none;
 }
 ::selection {
-  background: rgba(242, 163, 76, 0.24);
+  background: rgba(var(--acc-rgb), 0.24);
   color: var(--fg0);
 }
 :focus-visible {
@@ -225,7 +226,7 @@ a {
   display: block;
   flex: none;
   color: var(--acc);
-  filter: drop-shadow(0 0 8px rgba(242, 163, 76, 0.3));
+  filter: drop-shadow(0 0 8px rgba(var(--acc-rgb), 0.3));
 }
 .mark-chip {
   fill: currentColor;
@@ -313,7 +314,7 @@ a {
   background: var(--acc-dim);
 }
 .t-run:not(:disabled):hover {
-  background: rgba(242, 163, 76, 0.22);
+  background: rgba(var(--acc-rgb), 0.22);
 }
 .t-stop:not(:disabled) {
   color: var(--err);

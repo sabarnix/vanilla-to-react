@@ -22,9 +22,9 @@ const CSS = `
   --ai-raised:  var(--bg3, #262019);
   --ai-line:    var(--line, #2c261e);
   --ai-line2:   var(--line2, #3b342a);
-  --ai-acc:     var(--acc, #f2a34c);
-  --ai-acc-dim: var(--acc-dim, rgba(242, 163, 76, 0.14));
-  --ai-acc-hi:  var(--acc-hi, #f7c07a);
+  --ai-acc:     var(--acc, #FF5A2D);
+  --ai-acc-dim: var(--acc-dim, rgba(255, 90, 45, 0.14));
+  --ai-acc-hi:  var(--acc-hi, #FF7A3D);
   --ai-err:     var(--err, #e5716a);
   --ai-add:     #8fe0a0;
   --ai-del:     #eda49f;

@@ -40,7 +40,7 @@ function htmlResponse(id: string, status: number, html: string): SerializedRespo
 function noServerPage(): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Burrow preview — nothing running</title>
+<title>Sandbox preview — nothing running</title>
 <style>
   :root { color-scheme: dark; }
   html, body { height: 100%; margin: 0; }
@@ -57,10 +57,10 @@ function noServerPage(): string {
     box-shadow: 0 24px 60px -30px rgba(0,0,0,0.8);
   }
   .cube { display: inline-block; width: 34px; height: 34px; border-radius: 8px;
-    background: linear-gradient(140deg, #f2a34c, #c9761f); margin-bottom: 1rem; }
+    background: linear-gradient(140deg, #FF5A2D, #D14A22); margin-bottom: 1rem; }
   h1 { font-size: 1.05rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
   p { margin: 0.35rem 0; color: #a49a89; }
-  code { color: #f2a34c; background: #241f18; padding: 0.12em 0.42em; border-radius: 5px; }
+  code { color: #FF5A2D; background: #241f18; padding: 0.12em 0.42em; border-radius: 5px; }
 </style></head>
 <body><div class="card">
   <div class="cube"></div>
@@ -78,7 +78,7 @@ function noMatchingPortPage(port: number): string {
       : `<p>No servers are currently running.</p>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Burrow preview — nothing on port ${port}</title>
+<title>Sandbox preview — nothing on port ${port}</title>
 <style>
   :root { color-scheme: dark; }
   html, body { height: 100%; margin: 0; }
@@ -95,10 +95,10 @@ function noMatchingPortPage(port: number): string {
     box-shadow: 0 24px 60px -30px rgba(0,0,0,0.8);
   }
   .cube { display: inline-block; width: 34px; height: 34px; border-radius: 8px;
-    background: linear-gradient(140deg, #f2a34c, #c9761f); margin-bottom: 1rem; }
+    background: linear-gradient(140deg, #FF5A2D, #D14A22); margin-bottom: 1rem; }
   h1 { font-size: 1.05rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
   p { margin: 0.35rem 0; color: #a49a89; }
-  code { color: #f2a34c; background: #241f18; padding: 0.12em 0.42em; border-radius: 5px; }
+  code { color: #FF5A2D; background: #241f18; padding: 0.12em 0.42em; border-radius: 5px; }
 </style></head>
 <body><div class="card">
   <div class="cube"></div>
@@ -111,7 +111,7 @@ function noMatchingPortPage(port: number): string {
 function errorPage(message: string): string {
   const safe = message.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
   return `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<title>Burrow preview — handler error</title>
+<title>Sandbox preview — handler error</title>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; padding: 2rem; background: #0d0b09; color: #e7e2d8;

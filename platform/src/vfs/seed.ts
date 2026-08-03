@@ -1,7 +1,7 @@
 /**
  * Burrow — src/vfs/seed.ts
  * Initial workspace content: a README (rendered by the editor's markdown
- * preview on first load, with ./burrow.svg proving VFS-relative images), a
+ * preview on first load, with ./sandbox.svg proving VFS-relative images), a
  * zero-import index.ts server at the root ("bun run index.ts" → preview tab,
  * no install needed), and a small multi-file TypeScript demo project under
  * /home/user/demo that uses two esm.sh-resolvable dependencies (nanoid, hono)
@@ -19,11 +19,11 @@ import { SERVER_EXAMPLE_PACKAGE_JSON, SERVER_EXAMPLE_TS } from "../toolchain/see
 
 export const DEMO_DIR = `${WORKSPACE_ROOT}/demo`;
 
-const README_MD = `![burrow](./burrow.svg)
+const README_MD = `![vanilla to react](./sandbox.svg)
 
-# Burrow
+# Vanilla to React
 
-A whole dev machine in this browser tab. Bun's real transpiler (compiled to
+A whole dev sandbox in this browser tab. Bun's real transpiler (compiled to
 WASM), a bash-like shell, git, npm packages, and a local WebGPU AI agent —
 **phones home to nobody**.
 
@@ -73,7 +73,7 @@ git init && git add . && git commit -m "first"
 `;
 
 /**
- * Seed logo, referenced by the README ("![burrow](./burrow.svg)") — it proves
+ * Seed logo, referenced by the README ("![vanilla to react](./sandbox.svg)") — it proves
  * the markdown preview resolves workspace-relative images through the VFS.
  * Hand-drawn on purpose; Burrow should look like a person made it.
  */
@@ -81,30 +81,30 @@ const BURROW_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="
   <!-- burrow — hand-drawn on purpose. palette matches src/ui/styles.css -->
   <rect width="520" height="160" rx="12" fill="#17150f" stroke="#2e2920" stroke-width="1.5"/>
   <!-- the mound -->
-  <path d="M34 122 Q 72 54 126 62 Q 168 68 180 122 Z" fill="#322b20" stroke="#f2a34c" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M34 122 Q 72 54 126 62 Q 168 68 180 122 Z" fill="#322b20" stroke="#FF5A2D" stroke-width="2.5" stroke-linejoin="round"/>
   <!-- the hole -->
-  <ellipse cx="110" cy="122" rx="32" ry="9" fill="#0c0b0a" stroke="#f2a34c" stroke-width="2"/>
+  <ellipse cx="110" cy="122" rx="32" ry="9" fill="#0c0b0a" stroke="#FF5A2D" stroke-width="2"/>
   <!-- the resident: ears -->
-  <ellipse cx="102" cy="76" rx="5" ry="14" fill="#0c0b0a" stroke="#ffc27a" stroke-width="2" transform="rotate(-14 102 76)"/>
-  <ellipse cx="120" cy="76" rx="5" ry="14" fill="#0c0b0a" stroke="#ffc27a" stroke-width="2" transform="rotate(14 120 76)"/>
-  <ellipse cx="102" cy="78" rx="1.8" ry="8" fill="#f2a34c" opacity="0.55" transform="rotate(-14 102 78)"/>
-  <ellipse cx="120" cy="78" rx="1.8" ry="8" fill="#f2a34c" opacity="0.55" transform="rotate(14 120 78)"/>
+  <ellipse cx="102" cy="76" rx="5" ry="14" fill="#0c0b0a" stroke="#FF7A3D" stroke-width="2" transform="rotate(-14 102 76)"/>
+  <ellipse cx="120" cy="76" rx="5" ry="14" fill="#0c0b0a" stroke="#FF7A3D" stroke-width="2" transform="rotate(14 120 76)"/>
+  <ellipse cx="102" cy="78" rx="1.8" ry="8" fill="#FF5A2D" opacity="0.55" transform="rotate(-14 102 78)"/>
+  <ellipse cx="120" cy="78" rx="1.8" ry="8" fill="#FF5A2D" opacity="0.55" transform="rotate(14 120 78)"/>
   <!-- head, peeking -->
-  <circle cx="111" cy="100" r="12" fill="#0c0b0a" stroke="#ffc27a" stroke-width="2"/>
+  <circle cx="111" cy="100" r="12" fill="#0c0b0a" stroke="#FF7A3D" stroke-width="2"/>
   <!-- happy closed eyes + nose + whiskers -->
-  <path d="M104 99 q 2.5 -3 5 0 M113 99 q 2.5 -3 5 0" fill="none" stroke="#ffc27a" stroke-width="1.8" stroke-linecap="round"/>
-  <circle cx="111" cy="104" r="1.4" fill="#f2a34c"/>
+  <path d="M104 99 q 2.5 -3 5 0 M113 99 q 2.5 -3 5 0" fill="none" stroke="#FF7A3D" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="111" cy="104" r="1.4" fill="#FF5A2D"/>
   <path d="M97 103 l -7 -1.5 M97 106 l -7 1.5 M125 103 l 7 -1.5 M125 106 l 7 1.5" stroke="#7c7261" stroke-width="1.2" stroke-linecap="round"/>
   <!-- the ai sparkle it just thought of -->
-  <path d="M146 64 l 3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#ffc27a"/>
-  <circle cx="160" cy="52" r="1.8" fill="#f2a34c"/>
+  <path d="M146 64 l 3 7 7 3 -7 3 -3 7 -3 -7 -7 -3 7 -3 z" fill="#FF7A3D"/>
+  <circle cx="160" cy="52" r="1.8" fill="#FF5A2D"/>
   <!-- ground -->
   <path d="M24 122 H 196" stroke="#3d3629" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
   <path d="M446 122 H 496" stroke="#3d3629" stroke-width="2" stroke-linecap="round" stroke-dasharray="1 7"/>
   <!-- wordmark -->
-  <text x="208" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" fill="#ece3d2">zero to react</text>
-  <text x="210" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">a dev machine in a browser tab</text>
-  <text x="210" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">phones home to nobody</text>
+  <text x="208" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="36" fill="#ece3d2">vanilla to react</text>
+  <text x="210" y="108" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">learn React by building</text>
+  <text x="210" y="124" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#7c7261">everything runs in your tab</text>
 </svg>
 `;
 
@@ -126,7 +126,7 @@ const page = \`<!doctype html>
     <style>
       body { background: #17150f; color: #ece3d2; font-family: ui-monospace, monospace;
              display: grid; place-items: center; min-height: 90vh; text-align: center; }
-      h1 { color: #f2a34c; } a { color: #ffc27a; } code { color: #b3c186; }
+      h1 { color: #FF5A2D; } a { color: #FF7A3D; } code { color: #b3c186; }
     </style>
   </head>
   <body>
@@ -169,7 +169,7 @@ const DEMO_GREET_TS = `export function greet(name: string): string {
 
 export const SEED_FILES: Record<string, string> = {
   [`${WORKSPACE_ROOT}/README.md`]: README_MD,
-  [`${WORKSPACE_ROOT}/burrow.svg`]: BURROW_SVG,
+  [`${WORKSPACE_ROOT}/sandbox.svg`]: BURROW_SVG,
   [`${WORKSPACE_ROOT}/index.ts`]: ROOT_INDEX_TS,
   [`${DEMO_DIR}/package.json`]: SERVER_EXAMPLE_PACKAGE_JSON,
   [`${DEMO_DIR}/index.ts`]: DEMO_INDEX_TS,

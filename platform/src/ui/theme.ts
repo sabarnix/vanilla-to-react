@@ -1,6 +1,6 @@
 /**
- * Burrow — "toast" CodeMirror theme: warm graphite + baked-amber accent,
- * matching the CSS custom properties in styles.css (src/ui internal).
+ * "toast" CodeMirror theme: warm graphite + OpenClaw-red accent (#FF5A2D),
+ * matching the CSS custom properties in styles.css (src/ui internal). See ADR-0004.
  */
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
@@ -24,9 +24,9 @@ const viewTheme = EditorView.theme(
       padding: "8px 0",
     },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--acc)" },
-    ".cm-selectionBackground": { backgroundColor: "rgba(242, 163, 76, 0.10)" },
-    "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(242, 163, 76, 0.20)" },
-    ".cm-selectionMatch": { backgroundColor: "rgba(242, 163, 76, 0.12)" },
+    ".cm-selectionBackground": { backgroundColor: "rgba(var(--acc-rgb), 0.10)" },
+    "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(var(--acc-rgb), 0.20)" },
+    ".cm-selectionMatch": { backgroundColor: "rgba(var(--acc-rgb), 0.12)" },
     ".cm-activeLine": { backgroundColor: "rgba(236, 227, 210, 0.04)" },
     ".cm-activeLineGutter": {
       backgroundColor: "transparent",
@@ -41,15 +41,15 @@ const viewTheme = EditorView.theme(
     ".cm-foldGutter .cm-gutterElement": { color: "var(--fg2)" },
     "&.cm-focused": { outline: "none" },
     ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": {
-      backgroundColor: "rgba(242, 163, 76, 0.14)",
-      outline: "1px solid rgba(242, 163, 76, 0.35)",
+      backgroundColor: "rgba(var(--acc-rgb), 0.14)",
+      outline: "1px solid rgba(var(--acc-rgb), 0.35)",
     },
     ".cm-nonmatchingBracket": { color: "var(--err)" },
     ".cm-searchMatch": {
       backgroundColor: "rgba(130, 184, 216, 0.18)",
       outline: "1px solid rgba(130, 184, 216, 0.35)",
     },
-    ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "rgba(242, 163, 76, 0.28)" },
+    ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "rgba(var(--acc-rgb), 0.28)" },
     ".cm-panels": {
       backgroundColor: "var(--bg2)",
       color: "var(--fg0)",
@@ -86,7 +86,7 @@ const viewTheme = EditorView.theme(
 );
 
 const toastHighlight = HighlightStyle.define([
-  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword, t.operatorKeyword, t.definitionKeyword], color: "#f2a34c" },
+  { tag: [t.keyword, t.moduleKeyword, t.controlKeyword, t.operatorKeyword, t.definitionKeyword], color: "#FF5A2D" },
   { tag: [t.string, t.special(t.string), t.regexp], color: "#b3c186" },
   { tag: [t.number, t.bool, t.null, t.atom], color: "#dd9271" },
   { tag: t.comment, color: "#6e6455", fontStyle: "italic" },
@@ -97,7 +97,7 @@ const toastHighlight = HighlightStyle.define([
   { tag: [t.propertyName, t.labelName], color: "#c9bda9" },
   { tag: [t.operator, t.punctuation, t.bracket], color: "#8d8272" },
   { tag: [t.meta, t.annotation, t.processingInstruction], color: "#a99e8c" },
-  { tag: t.tagName, color: "#f2a34c" },
+  { tag: t.tagName, color: "#FF5A2D" },
   { tag: t.attributeName, color: "#d8bf8f" },
   { tag: t.self, color: "#dd9271" },
   { tag: t.invalid, color: "#e5716a" },

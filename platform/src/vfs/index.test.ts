@@ -27,7 +27,7 @@ describe("initVfs", () => {
 
     const paths = vfs!.getAllPaths();
     expect(paths).toContain(`${WORKSPACE_ROOT}/README.md`);
-    expect(paths).toContain(`${WORKSPACE_ROOT}/burrow.svg`); // README's image, VFS-resolved
+    expect(paths).toContain(`${WORKSPACE_ROOT}/sandbox.svg`); // README's image, VFS-resolved
     expect(paths).toContain(`${WORKSPACE_ROOT}/index.ts`); // zero-import "bun run index.ts" server
     expect(paths).toContain(`${DEMO_DIR}/package.json`);
     expect(paths).toContain(`${DEMO_DIR}/index.ts`);

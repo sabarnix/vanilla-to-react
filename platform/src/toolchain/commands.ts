@@ -26,7 +26,7 @@ const C = {
   green: "\x1b[32m",
   yellow: "\x1b[33m",
   cyan: "\x1b[36m",
-  orange: "\x1b[38;5;214m",
+  orange: "\x1b[38;2;255;90;45m",
 };
 
 /**
@@ -53,7 +53,7 @@ const UNSUPPORTED_SUBCOMMANDS = new Set([
   "repl",
 ]);
 
-const BUN_USAGE = `${C.bold}Zero to React${C.reset} — a slice of bun, in your tab
+const BUN_USAGE = `${C.bold}Vanilla to React${C.reset} — a slice of bun, in your tab
 
 ${C.bold}usage:${C.reset}
    ${C.cyan}bun run${C.reset} <file>      transpile + execute a module graph in a worker
@@ -233,7 +233,7 @@ function createBunCommand(): CommandSpec {
     async execute(args, ctx): Promise<ShellExecResult> {
       const first = args[0];
       if (!first || first === "--help" || first === "-h" || first === "help") return ok(BUN_USAGE);
-      if (first === "--version" || first === "-v") return ok(`burrow ${C.orange}1.0.0-wasm${C.reset}\n`);
+      if (first === "--version" || first === "-v") return ok(`sandbox ${C.orange}1.0.0-wasm${C.reset}\n`);
       if (first === "run") return doRun(args.slice(1), ctx);
       if (first === "build") return doBuild(args.slice(1), ctx);
       if (first === "stop") {

@@ -513,7 +513,7 @@ describe("bun install/add/remove command", () => {
     const { run } = setup({ name: "proj", version: "1.0.0" });
     const version = await run(["--version"]);
     expect(version.exitCode).toBe(0);
-    expect(version.stdout).toContain("burrow");
+    expect(version.stdout).toContain("sandbox");
 
     const help = await run(["--help"]);
     expect(help.exitCode).toBe(0);

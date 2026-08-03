@@ -289,17 +289,17 @@ describe("bun/serve commands", () => {
     expect(createToolchainCommands().map((c) => c.name).sort()).toEqual(["bun", "serve"]);
   });
 
-  test("bun --help prints the Burrow usage banner", async () => {
+  test("bun --help prints the Vanilla to React usage banner", async () => {
     const result = await getCommand("bun").execute(["--help"], makeCtx({}));
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("Burrow");
+    expect(result.stdout).toContain("Vanilla to React");
     expect(result.stdout).toContain("bun run");
   });
 
   test("bun --version reports the wasm build", async () => {
     const result = await getCommand("bun").execute(["--version"], makeCtx({}));
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("burrow");
+    expect(result.stdout).toContain("sandbox");
     expect(result.stdout).toContain("1.0.0-wasm");
   });
 

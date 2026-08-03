@@ -102,7 +102,7 @@ test("typed input executes; stdout uses \\r\\n and stderr renders red", async ()
   expect(output()).toContain("hi\r\n");
   expect(output()).toContain("\x1b[31m");
   // prompt is re-rendered after the command
-  expect(output()).toContain("user@burrow");
+  expect(output()).toContain("user@sandbox");
 });
 
 test("Ctrl+C aborts a running sleep (exitCode 126, shell stays usable)", async () => {

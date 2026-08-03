@@ -48,15 +48,15 @@ app.get("/", (c) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>hono on Burrow</title>
+  <title>hono on Sandbox</title>
   <style>
     body { font: 15px/1.6 ui-monospace, Menlo, monospace; background: #0d0b09; color: #e7e2d8;
            display: grid; place-items: center; min-height: 100vh; margin: 0; }
     main { max-width: 36rem; padding: 2rem; }
-    code { background: #241f18; border-radius: 6px; padding: 0.1em 0.4em; color: #f2a34c; }
+    code { background: #241f18; border-radius: 6px; padding: 0.1em 0.4em; color: #FF5A2D; }
     pre { background: #17140f; border: 1px solid #322c22; border-radius: 10px;
           padding: 0.75rem 1rem; white-space: pre-wrap; color: #c8bfb0; }
-    button { font: inherit; background: #f2a34c; color: #241f18; border: 0; border-radius: 8px;
+    button { font: inherit; background: #FF5A2D; color: #241f18; border: 0; border-radius: 8px;
              padding: 0.5rem 1.1rem; cursor: pointer; }
     button:hover { filter: brightness(1.1); }
   </style>

@@ -81,12 +81,12 @@ async function handlePreview(event, url) {
 
   const client = await pickClient(event);
   if (!client) {
-    return plain(503, "Burrow preview: no controlling page is open — open the Burrow tab first.");
+    return plain(503, "Sandbox preview: no controlling page is open — open the sandbox tab first.");
   }
 
   const response = await requestFromPage(client, serialized, body, port);
   if (!response) {
-    return plain(504, "Burrow preview: the run worker did not respond in time (504).");
+    return plain(504, "Sandbox preview: the run worker did not respond in time (504).");
   }
   return deserializeResponse(response);
 }

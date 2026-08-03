@@ -15,8 +15,8 @@ describe("renderMarkdownDoc", () => {
   });
 
   test("images emit data-md-src, never a live src attribute", () => {
-    const html = renderMarkdownDoc("![logo](./burrow.svg)\n\n![ext](https://x.dev/a.png)");
-    expect(html).toContain('data-md-src="./burrow.svg"');
+    const html = renderMarkdownDoc("![logo](./sandbox.svg)\n\n![ext](https://x.dev/a.png)");
+    expect(html).toContain('data-md-src="./sandbox.svg"');
     expect(html).toContain('alt="logo"');
     expect(html).not.toContain(" src="); // hydration decides what may load
   });

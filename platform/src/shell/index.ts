@@ -25,7 +25,7 @@ import { createHybridSuggestionProvider, ProjectCompletionContextProvider } from
 import { BASE_ENV, ShellDriver } from "./driver.ts";
 
 const GREETING: readonly string[] = [
-  "\x1b[1;38;5;214mburrow\x1b[0m \x1b[2m— a dev machine in this tab. real bun, real git, real shell, nothing leaves the browser.\x1b[0m",
+  "\x1b[1;38;2;255;90;45msandbox\x1b[0m \x1b[2m— a dev machine in this tab. real bun, real git, real shell, nothing leaves the browser.\x1b[0m",
   "\x1b[2mtry \x1b[0m\x1b[36mbun run <file>\x1b[0m\x1b[2m · \x1b[0m\x1b[36mbun add <pkg>\x1b[0m\x1b[2m · \x1b[0m\x1b[36mgit clone <url>\x1b[0m\x1b[2m · \x1b[0m\x1b[36medit <file>\x1b[0m",
   "",
 ];

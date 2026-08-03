@@ -39,7 +39,7 @@ export const BASE_ENV: Record<string, string> = {
   TERM: "xterm-256color",
   HOME: WORKSPACE_ROOT,
   USER: "user",
-  HOSTNAME: "burrow",
+  HOSTNAME: "sandbox",
 };
 
 export interface ShellDriverOptions {
@@ -130,7 +130,7 @@ export class ShellDriver {
 
   prompt(): string {
     const display = this.cwd.replace(/^\/home\/user/, "~") || "/";
-    return `\x1b[1;32muser@burrow${RESET}:\x1b[1;34m${display}${RESET}$ `;
+    return `\x1b[1;32muser@sandbox${RESET}:\x1b[1;34m${display}${RESET}$ `;
   }
 
   // ==========================================================================
