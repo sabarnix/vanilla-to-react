@@ -34,4 +34,21 @@ ADR at the schema seam; 21 tasks total = 7 days × 3.)
 ## Hidden tests
 The graded tests a learner's code is run against. They **pass against the task's
 solution** and **fail against its starter code**. Executed by the real Bun test
-runner, not the in-tab wasm runner. See ADR-0003.
+runner, not the in-tab wasm runner. See ADR-0003. On the static Pages deploy,
+grading is **deferred** (ADR-0006) — CI proves correctness; the browser does not
+grade yet.
+
+## Course mode
+The learner-facing surface: the course embedded as a **pane inside the sandbox**
+chrome, orchestrating the sandbox's real editor / VFS / panels rather than
+replacing them. Selected via `#app` `data-mview="course"` (the boot default); the
+raw `sandbox` editor view stays reachable. See ADR-0005.
+
+## Task panel
+The `#rightbar` panel shown in course mode: rendered task description + hints /
+solution reveal + the **Run** and **Mark done → next** controls. See ADR-0005.
+
+## Mark done
+The manual control that advances to the next task and persists completion in the
+progress store. Used now because grading is deferred (ADR-0006); when in-tab
+grading lands, an all-pass run also auto-marks. See ADR-0005.
